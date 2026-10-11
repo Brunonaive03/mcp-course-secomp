@@ -1,6 +1,6 @@
-# MCP Curso - Infraestrutura e Dados para Google Colab
+# MCP Course - Infraestrutura e Dados para Google Colab
 
-Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)**. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
+Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** na SECOMP UFPE. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
 
 ---
 
@@ -32,21 +32,23 @@ No notebook do Google Colab, execute em uma célula para instalar o pacote diret
 !pip install git+https://github.com/Brunonaive03/mcp-course-secomp.git
 ```
 
-Em seguida, importe e execute a função `prepare_enviorement` passando a URL do seu repositório:
+Em seguida, importe e execute a função `prepare_enviorement`:
 
 ```python
 from mcp_utils import prepare_enviorement
 
-prepare_enviorement("https://github.com/Brunonaive03/mcp-curso.git")
+prepare_enviorement()
 ```
+
+*(Opcional: você também pode passar explicitamente a URL do repositório como argumento: `prepare_enviorement("https://github.com/Brunonaive03/mcp-course-secomp.git")`)*
 
 ---
 
 ## ⚙️ O que a função `prepare_enviorement` faz
 
-A função executa de forma sequencial e silenciosa:
-1. **Chave GPG do MongoDB 7.0**: Adiciona a chave oficial do MongoDB.
-2. **Repositório APT**: Registra o repositório oficial do MongoDB 7.0 na lista de fontes do sistema.
+A função detecta automaticamente a versão do Ubuntu do Colab (Noble 24.04 ou Jammy 22.04) e executa de forma sequencial e silenciosa:
+1. **Chave GPG do MongoDB**: Adiciona a chave oficial do MongoDB (`pgp.mongodb.com`).
+2. **Repositório APT**: Registra o repositório oficial do MongoDB compatível (`8.0` para Ubuntu 24.04 Noble, `7.0` para Ubuntu 22.04 Jammy).
 3. **Instalação do MongoDB**: Executa `apt-get update` e instala os pacotes `mongodb-org` e `mongodb-database-tools`.
 4. **Inicialização do `mongod`**: Cria o diretório `/data/db` e inicia o daemon em background com `--fork`.
 5. **Download dos Dados**: Realiza `git clone` do repositório para obter os arquivos de dump da pasta `data/`.
