@@ -32,19 +32,19 @@ No notebook do Google Colab, execute em uma célula para instalar o pacote diret
 !pip install git+https://github.com/Brunonaive03/mcp-course-secomp.git
 ```
 
-Em seguida, importe e execute a função `prepare_enviorement`:
+Em seguida, importe e execute a função `prepare_environment`:
 
 ```python
-from mcp_utils import prepare_enviorement
+from mcp_utils import prepare_environment
 
-prepare_enviorement()
+prepare_environment()
 ```
 
-*(Opcional: você também pode passar explicitamente a URL do repositório como argumento: `prepare_enviorement("https://github.com/Brunonaive03/mcp-course-secomp.git")`)*
+*(Opcional: você também pode passar explicitamente a URL do repositório como argumento: `prepare_environment("https://github.com/Brunonaive03/mcp-course-secomp.git")`)*
 
 ---
 
-## ⚙️ O que a função `prepare_enviorement` faz
+## ⚙️ O que a função `prepare_environment` faz
 
 A função detecta automaticamente a versão do Ubuntu do Colab (Noble 24.04 ou Jammy 22.04) e executa de forma sequencial e silenciosa:
 1. **Chave GPG do MongoDB**: Adiciona a chave oficial do MongoDB (`pgp.mongodb.com`).

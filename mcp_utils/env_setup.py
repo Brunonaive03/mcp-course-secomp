@@ -46,7 +46,7 @@ def _get_system_info():
     return codename, mongo_version, gpg_url
 
 
-def prepare_enviorement(repo_url: str = "https://github.com/Brunonaive03/mcp-course-secomp.git"):
+def prepare_environment(repo_url: str = "https://github.com/Brunonaive03/mcp-course-secomp.git"):
     """
     Prepara o ambiente do Google Colab para o mini-curso MCP:
     1. Instala a chave GPG oficial do MongoDB.
@@ -148,6 +148,3 @@ def prepare_enviorement(repo_url: str = "https://github.com/Brunonaive03/mcp-cou
         print("Configuração concluída com possíveis avisos. Verifique os logs acima.")
     print("=" * 60)
 
-
-# Alias com grafia alternativa para conveniência
-prepare_environment = prepare_enviorement
