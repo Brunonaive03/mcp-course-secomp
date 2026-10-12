@@ -258,69 +258,143 @@ class MCPAgent:
 
             # 4. Verificar se a LLM solicitou chamada de Tool
             if getattr(assistant_msg, "tool_calls", None):
-                # Adiciona a intenção da LLM no histórico da conversa
-                messages.append(assistant_msg)
+                # Adiciona a intenção da LLM no histórico como dicionário estruturado e serializável
+                assistant_tool_calls = []
+                for i, tc in enumerate(assistant_msg.tool_calls):
+                    call_id = getattr(tc, "id", None) or f"call_{i}"
+                    assistant_tool_calls.append({
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                    })
 
-                for tool_call in assistant_msg.tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": assistant_msg.content or "",
+                    "tool_calls": assistant_tool_calls,
+                })
+
+                last_result_text = ""
+                for i, tool_call in enumerate(assistant_msg.tool_calls):
                     fn_name = tool_call.function.name
+                    call_id = getattr(tool_call, "id", None) or f"call_{i}"
                     try:
                         fn_args = json.loads(tool_call.function.arguments or "{}")
                     except Exception:
                         fn_args = {}
 
                     # Executa a tool no Servidor MCP
-                    tool_result = await session.call_tool(fn_name, fn_args)
+                    try:
+                        tool_result = await session.call_tool(fn_name, fn_args)
+                    except Exception as err:
+                        tool_result = None
+                        result_text = f"Erro ao executar a ferramenta {fn_name}: {err}"
 
-                    # Intercepta se a tool retornou informações de música
-                    track_cand = self._extract_track_from_tool_result(tool_result)
-                    if track_cand:
-                        detected_track = track_cand
-                        # Identifica o track_id
-                        track_id = None
-                        if isinstance(track_cand, str) and track_cand.startswith("trk_"):
-                            track_id = track_cand
-                        elif isinstance(track_cand, dict):
-                            track_id = track_cand.get("track_id") or track_cand.get("_id")
+                    if tool_result:
+                        # Intercepta se a tool retornou informações de música
+                        track_cand = self._extract_track_from_tool_result(tool_result)
+                        if track_cand:
+                            detected_track = track_cand
+                            # Identifica o track_id
+                            track_id = None
+                            if isinstance(track_cand, str) and track_cand.startswith("trk_"):
+                                track_id = track_cand
+                            elif isinstance(track_cand, dict):
+                                track_id = track_cand.get("track_id") or track_cand.get("_id")
 
-                        # Se tiver track_id, a aplicação lê o MCP Resource: music://tracks/{track_id}
-                        if track_id:
-                            try:
-                                resource_uri = f"music://tracks/{track_id}"
-                                resource_res = await session.read_resource(resource_uri)
-                                if resource_res and resource_res.contents:
-                                    c = resource_res.contents[0]
-                                    if hasattr(c, "text") and c.text:
-                                        res_data = json.loads(c.text)
-                                        if isinstance(res_data, dict):
-                                            detected_track = res_data
-                            except Exception:
-                                # Se o servidor não declarou o recurso ou der erro, mantém track_cand
-                                pass
+                            # Se tiver track_id, a aplicação lê o MCP Resource: music://tracks/{track_id}
+                            if track_id:
+                                try:
+                                    resource_uri = f"music://tracks/{track_id}"
+                                    resource_res = await session.read_resource(resource_uri)
+                                    if resource_res and resource_res.contents:
+                                        c = resource_res.contents[0]
+                                        if hasattr(c, "text") and c.text:
+                                            res_data = json.loads(c.text)
+                                            if isinstance(res_data, dict):
+                                                detected_track = res_data
+                                except Exception:
+                                    # Se o servidor não declarou o recurso ou der erro, mantém track_cand
+                                    pass
 
-                    # Converte conteúdo do resultado para texto
-                    result_text_parts = []
-                    for c in tool_result.content:
-                        if hasattr(c, "text"):
-                            result_text_parts.append(c.text)
-                    result_text = "\n".join(result_text_parts) or "Sucesso."
+                        # Converte conteúdo do resultado para texto
+                        result_text_parts = []
+                        for c in getattr(tool_result, "content", []):
+                            if hasattr(c, "text"):
+                                result_text_parts.append(c.text)
+                        result_text = "\n".join(result_text_parts) or "Sucesso."
+
+                    last_result_text = result_text
 
                     # Adiciona a resposta da ferramenta para a LLM
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": call_id,
                         "content": result_text,
                     })
 
                 # Segunda chamada para a LLM gerar a resposta final com os dados da tool
-                final_resp = self.llm_client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                )
-                final_text = final_resp.choices[0].message.content or ""
+                final_call_kwargs: Dict[str, Any] = {
+                    "model": self.model,
+                    "messages": messages,
+                }
+                if openai_tools:
+                    final_call_kwargs["tools"] = openai_tools
+
+                try:
+                    final_resp = self.llm_client.chat.completions.create(**final_call_kwargs)
+                    final_msg = final_resp.choices[0].message
+                    final_text = (
+                        final_msg.content
+                        or getattr(final_msg, "reasoning_content", None)
+                        or getattr(final_msg, "reasoning", None)
+                        or ""
+                    )
+                except Exception as e:
+                    final_text = ""
+
+                # Fallback amigável caso modelos de raciocínio (como gpt-oss) deixem content vazio
+                if not final_text or not final_text.strip():
+                    if detected_track and isinstance(detected_track, dict):
+                        t_name = detected_track.get("title", "faixa selecionada")
+                        t_artists = detected_track.get("artists") or [detected_track.get("artist", "")]
+                        artist_names = ", ".join(str(a) for a in t_artists if a)
+                        if artist_names:
+                            final_text = f"Encontrei a música **{t_name}** de **{artist_names}** no catálogo!"
+                        else:
+                            final_text = f"Encontrei a faixa **{t_name}** no catálogo!"
+                    elif last_result_text and last_result_text != "Sucesso.":
+                        try:
+                            parsed = json.loads(last_result_text)
+                            if isinstance(parsed, list) and len(parsed) > 0:
+                                items = []
+                                for item in parsed:
+                                    if isinstance(item, dict):
+                                        title = item.get("title", "Faixa")
+                                        artists = item.get("artists", [])
+                                        art_str = f" ({', '.join(artists)})" if artists else ""
+                                        items.append(f"• **{title}**{art_str}")
+                                if items:
+                                    final_text = "Encontrei as seguintes faixas:\n" + "\n".join(items)
+                        except Exception:
+                            pass
+                        if not final_text:
+                            final_text = f"Resultado da consulta:\n{last_result_text}"
+                    else:
+                        final_text = "Consulta realizada com sucesso."
+
                 return final_text
 
             else:
-                return assistant_msg.content or ""
+                return (
+                    assistant_msg.content
+                    or getattr(assistant_msg, "reasoning_content", None)
+                    or getattr(assistant_msg, "reasoning", None)
+                    or "Olá! Como posso ajudar você com músicas hoje?"
+                )
 
         reply_text = await self._run_session(_step)
         return reply_text, detected_track

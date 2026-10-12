@@ -323,19 +323,24 @@ def build_music_chat_app(
                     history[-1]["content"] = reply_part
                     yield "", history, _format_track_html(new_track), _extract_preview_url(new_track), new_track
             else:
-                # Se for retorno estático (string ou tupla), aplica digitação suave
                 if isinstance(result, (tuple, list)) and len(result) >= 2:
-                    reply_text = str(result[0])
+                    reply_text = str(result[0] or "")
                     candidate_track = _normalize_track(result[1])
                     if candidate_track:
                         new_track = candidate_track
                 elif isinstance(result, dict) and "reply" in result:
-                    reply_text = str(result.get("reply", ""))
+                    reply_text = str(result.get("reply", "") or "")
                     candidate_track = _normalize_track(result.get("track"))
                     if candidate_track:
                         new_track = candidate_track
                 else:
-                    reply_text = str(result)
+                    reply_text = str(result or "")
+
+                if not reply_text.strip():
+                    if new_track and isinstance(new_track, dict) and new_track.get("title"):
+                        reply_text = f"Faixa **{new_track.get('title')}** carregada no player."
+                    else:
+                        reply_text = "Processado com sucesso."
 
                 # Efeito visual de digitação
                 import time
