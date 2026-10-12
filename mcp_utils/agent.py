@@ -195,43 +195,54 @@ class MCPAgent:
         return openai_tools
 
 
-    def _extract_track_from_tool_result(self, raw_result: Any) -> Optional[Any]:
-        """Tenta extrair metadados ou ID de faixa a partir do retorno da tool do MCP."""
+    def _extract_tracks_from_tool_result(self, raw_result: Any) -> List[Any]:
+        """Tenta extrair metadados ou IDs de todas as faixas a partir do retorno da tool do MCP."""
         if not raw_result or not hasattr(raw_result, "content"):
-            return None
+            return []
 
+        tracks: List[Any] = []
         for item in raw_result.content:
             if isinstance(item, TextContent) and item.text:
                 text = item.text.strip()
                 # 1. Tentar parsear JSON
                 try:
                     data = json.loads(text)
-                    if isinstance(data, dict):
-                        # Caso documento completo de track
-                        if "resources" in data or "preview_url" in data or "thumbnail_url" in data:
-                            return data
-                        if "track_id" in data or "_id" in data:
-                            return data
-                    elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-                        return data[0]
+                    if isinstance(data, list):
+                        for el in data:
+                            if isinstance(el, dict):
+                                tracks.append(el)
+                            elif isinstance(el, str) and el.startswith("trk_"):
+                                tracks.append(el)
+                    elif isinstance(data, dict):
+                        tracks.append(data)
                 except Exception:
                     pass
 
-                # 2. Busca por ID no formato trk_...
-                match = re.search(r"trk_[a-zA-Z0-9]+", text)
-                if match:
-                    return match.group(0)
+                # 2. Se não encontrou no JSON, busca por IDs no formato trk_...
+                if not tracks:
+                    matches = re.findall(r"trk_[a-zA-Z0-9]+", text)
+                    if matches:
+                        seen = set()
+                        for m in matches:
+                            if m not in seen:
+                                seen.add(m)
+                                tracks.append(m)
 
-        return None
+        return tracks
 
-    async def _chat_async(self, message: str, history: Optional[list] = None) -> Tuple[str, Optional[Any]]:
+    def _extract_track_from_tool_result(self, raw_result: Any) -> Optional[Any]:
+        """Tenta extrair metadados ou ID de faixa (primeiro item) a partir do retorno da tool."""
+        tracks = self._extract_tracks_from_tool_result(raw_result)
+        return tracks[0] if tracks else None
+
+    async def _chat_async(self, message: str, history: Optional[list] = None) -> Tuple[str, List[Any]]:
         """Loop de execução assíncrona do agente com tool-calling."""
         print(f"\n" + "=" * 60, flush=True)
         print(f"🎵 [MCP Host] Mensagem recebida: \"{message}\"", flush=True)
-        detected_track = None
+        detected_tracks: List[Any] = []
 
         async def _step(session: ClientSession):
-            nonlocal detected_track
+            nonlocal detected_tracks
 
             # 1. Descoberta de Tools no Servidor MCP
             print(f"🔍 [MCP Host] Descobrindo ferramentas no servidor MCP...", flush=True)
@@ -315,32 +326,43 @@ class MCPAgent:
 
                     if tool_result:
                         # Intercepta se a tool retornou informações de música
-                        track_cand = self._extract_track_from_tool_result(tool_result)
-                        if track_cand:
-                            detected_track = track_cand
-                            # Identifica o track_id
-                            track_id = None
-                            if isinstance(track_cand, str) and track_cand.startswith("trk_"):
-                                track_id = track_cand
-                            elif isinstance(track_cand, dict):
-                                track_id = track_cand.get("track_id") or track_cand.get("_id")
+                        tracks_cand = self._extract_tracks_from_tool_result(tool_result)
+                        if tracks_cand:
+                            print(f"   🎵 [MCP Host] {len(tracks_cand)} faixa(s) detectada(s) no retorno da Tool.", flush=True)
+                            for cand in tracks_cand:
+                                track_id = None
+                                if isinstance(cand, str) and cand.startswith("trk_"):
+                                    track_id = cand
+                                elif isinstance(cand, dict):
+                                    track_id = cand.get("track_id") or cand.get("_id")
 
-                            if track_id:
-                                print(f"   🎯 [MCP Host] ID de faixa identificado: '{track_id}'", flush=True)
-                                # A aplicação lê o MCP Resource: music://tracks/{track_id}
-                                resource_uri = f"music://tracks/{track_id}"
-                                print(f"   📖 [MCP Resource] Solicitando leitura de '{resource_uri}'...", flush=True)
-                                try:
-                                    resource_res = await session.read_resource(resource_uri)
-                                    if resource_res and resource_res.contents:
-                                        c = resource_res.contents[0]
-                                        if hasattr(c, "text") and c.text:
-                                            res_data = json.loads(c.text)
-                                            if isinstance(res_data, dict):
-                                                detected_track = res_data
-                                                print(f"   ✅ [MCP Resource] Sucesso! Recurso resolvido via MCP.", flush=True)
-                                except Exception as r_err:
-                                    print(f"   ℹ️ [MCP Resource] Servidor não possui recurso para '{resource_uri}' ({r_err}). Usando retorno da Tool.", flush=True)
+                                resolved_track = cand
+                                if track_id:
+                                    print(f"   🎯 [MCP Host] ID identificado: '{track_id}'. Resolvendo via MCP Resource...", flush=True)
+                                    resource_uri = f"music://tracks/{track_id}"
+                                    try:
+                                        resource_res = await session.read_resource(resource_uri)
+                                        if resource_res and resource_res.contents:
+                                            c = resource_res.contents[0]
+                                            if hasattr(c, "text") and c.text:
+                                                res_data = json.loads(c.text)
+                                                if isinstance(res_data, dict):
+                                                    resolved_track = res_data
+                                                    print(f"   ✅ [MCP Resource] Recurso '{resource_uri}' resolvido via MCP.", flush=True)
+                                    except Exception as r_err:
+                                        print(f"   ℹ️ [MCP Resource] Aviso ao ler '{resource_uri}': {r_err}. Mantendo dados da Tool.", flush=True)
+
+                                detected_tracks.append(resolved_track)
+
+                            # Deduplica faixas por ID ou título mantendo a ordem
+                            seen_ids = set()
+                            unique_tracks = []
+                            for t in detected_tracks:
+                                tid = (t.get("track_id") or t.get("_id") or t.get("title")) if isinstance(t, dict) else str(t)
+                                if tid not in seen_ids:
+                                    seen_ids.add(tid)
+                                    unique_tracks.append(t)
+                            detected_tracks = unique_tracks
 
                         # Converte conteúdo do resultado para texto
                         result_text_parts = []
@@ -385,25 +407,41 @@ class MCPAgent:
                 # Fallback amigável caso modelos de raciocínio (como gpt-oss) deixem content vazio
                 if not final_text or not final_text.strip():
                     print(f"ℹ️ [MCP Host] LLM não gerou texto conversacional. Sintetizando resposta amigável a partir dos dados...", flush=True)
-                    if detected_track and isinstance(detected_track, dict):
-                        t_name = detected_track.get("title", "faixa selecionada")
-                        t_artists = detected_track.get("artists") or [detected_track.get("artist", "")]
-                        artist_names = ", ".join(str(a) for a in t_artists if a)
-                        if artist_names:
-                            final_text = f"Encontrei a música **{t_name}** de **{artist_names}** no catálogo!"
+                    if detected_tracks:
+                        if len(detected_tracks) == 1:
+                            t = detected_tracks[0]
+                            t_name = t.get("title", "faixa selecionada") if isinstance(t, dict) else str(t)
+                            t_artists = (t.get("artists") or [t.get("artist", "")]) if isinstance(t, dict) else []
+                            artist_names = ", ".join(str(a) for a in t_artists if a)
+                            if artist_names:
+                                final_text = f"Encontrei a música **{t_name}** de **{artist_names}** no catálogo! A prévia de 30 segundos já está disponível no player abaixo."
+                            else:
+                                final_text = f"Encontrei a faixa **{t_name}** no catálogo! A prévia já está disponível no player abaixo."
                         else:
-                            final_text = f"Encontrei a faixa **{t_name}** no catálogo!"
+                            items = []
+                            for idx, t in enumerate(detected_tracks):
+                                if isinstance(t, dict):
+                                    title = t.get("title", f"Faixa {idx+1}")
+                                    artists = t.get("artists") or [t.get("artist", "")]
+                                    art_str = f" ({', '.join(str(a) for a in artists if a)})" if artists else ""
+                                    items.append(f"{idx+1}. **{title}**{art_str}")
+                                else:
+                                    items.append(f"{idx+1}. **{t}**")
+                            final_text = (
+                                f"Encontrei **{len(detected_tracks)} faixas** no catálogo! Você pode ouvir as prévias de 30 segundos e alternar entre elas no player abaixo:\n\n"
+                                + "\n".join(items)
+                            )
                     elif last_result_text and last_result_text != "Sucesso.":
                         try:
                             parsed = json.loads(last_result_text)
                             if isinstance(parsed, list) and len(parsed) > 0:
                                 items = []
-                                for item in parsed:
+                                for idx, item in enumerate(parsed):
                                     if isinstance(item, dict):
-                                        title = item.get("title", "Faixa")
+                                        title = item.get("title", f"Faixa {idx+1}")
                                         artists = item.get("artists", [])
                                         art_str = f" ({', '.join(artists)})" if artists else ""
-                                        items.append(f"• **{title}**{art_str}")
+                                        items.append(f"{idx+1}. **{title}**{art_str}")
                                 if items:
                                     final_text = "Encontrei as seguintes faixas:\n" + "\n".join(items)
                         except Exception:
@@ -429,9 +467,9 @@ class MCPAgent:
                 return resp_text
 
         reply_text = await self._run_session(_step)
-        return reply_text, detected_track
+        return reply_text, detected_tracks
 
-    def chat(self, message: str, history: Optional[list] = None) -> Tuple[str, Optional[Any]]:
+    def chat(self, message: str, history: Optional[list] = None) -> Tuple[str, List[Any]]:
         """
         Método de chat síncrono para ser passado diretamente ao `launch_music_chat`:
 

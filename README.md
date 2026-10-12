@@ -88,7 +88,7 @@ mongo = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
 # 2. Tool MCP: O modelo descobre e chama para buscar faixas
 @server.tool()
 def search_tracks_by_artist(artist: str) -> str:
-    """Busca até 3 faixas de um determinado artista no catálogo.
+    """Busca todas as faixas de um determinado artista no catálogo.
     
     Args:
         artist: Nome do artista ou banda (ex: 'Queen', 'Oasis').
@@ -96,7 +96,7 @@ def search_tracks_by_artist(artist: str) -> str:
     cursor = mongo["tracks"].find(
         {"artists": {"$regex": artist, "$options": "i"}},
         {"_id": 1, "title": 1, "artists": 1}
-    ).limit(3)
+    )
     results = [
         {"track_id": str(t["_id"]), "title": t["title"], "artists": t.get("artists", [])}
         for t in cursor
@@ -114,19 +114,19 @@ def get_track_resource(track_id: str) -> str:
 ```
 
 > **💡 Diferença Fundamental no MCP:**
-> - **Tool (`search_tracks_by_artist`)**: Operação solicitada pelo **LLM**. O modelo decide quando chamar e recebe dados compactos no contexto para formular sua resposta ao usuário.
-> - **Resource (`music://tracks/{track_id}`)**: Conteúdo lido pela **aplicação/Host** (`resources/read`). Quando o assistente identifica uma música, a aplicação resolve o recurso via protocolo MCP para obter a URL de streaming e a imagem da capa, alimentando o Player estilo Spotify.
+> - **Tool (`search_tracks_by_artist`)**: Operação solicitada pelo **LLM**. O modelo decide quando chamar e recebe dados compactos no contexto (IDs, títulos e artistas de todas as faixas encontradas) para formular sua resposta ao usuário.
+> - **Resource (`music://tracks/{track_id}`)**: Conteúdo lido pela **aplicação/Host** (`resources/read`). Quando o assistente identifica as músicas retornadas pela Tool, a aplicação resolve os recursos de cada faixa via protocolo MCP para obter as URLs das **prévias de áudio (30s)** e imagens de capa, montando uma **playlist completa com alternância de faixas** diretamente no Player estilo Spotify.
 
 ---
 
-### 5. Iniciar o Chat com Player Spotify e Servidor MCP
+### 5. Iniciar o Chat com Player de Prévias e Servidor MCP
 
-Basta passar o `server` para `launch_music_chat`. A biblioteca inicializa o agente com o `gpt-oss:20b`, executa o loop de ferramentas, resolve os recursos e toca as músicas no player automaticamente:
+Basta passar o `server` para `launch_music_chat`. A biblioteca inicializa o agente com o `gpt-oss:20b`, lista as ferramentas conectadas, executa o loop de chamadas, resolve as prévias de todas as faixas e permite alternar entre elas no player:
 
 ```python
 from mcp_utils import launch_music_chat
 
-# Conecta o servidor MCP ao chat com gpt-oss:20b e player Spotify
+# Conecta o servidor MCP ao chat com gpt-oss:20b e player de prévias (30s)
 launch_music_chat(server=server)
 ```
 
