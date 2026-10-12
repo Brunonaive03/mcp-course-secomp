@@ -15,9 +15,12 @@ mcp-course-secomp/
 │   ├── reviews.metadata.json
 │   ├── tracks.bson
 │   └── tracks.metadata.json
-├── mcp_utils/                 # Pacote Python com scripts utilitários
+├── mcp_utils/                 # Pacote Python com utilitários
 │   ├── __init__.py
-│   └── env_setup.py           # Script de automação do ambiente
+│   ├── env_setup.py           # Automação do ambiente MongoDB no Colab
+│   ├── llm_setup.py           # Conexão e autenticação com Ollama Cloud
+│   ├── chat_ui.py             # Chat Gradio com player de música estilo Spotify
+│   └── agent.py               # Agente MCP (conecta servidor ao Ollama e ao Chat)
 ├── setup.py                   # Configuração de empacotamento Python
 └── README.md                  # Documentação do projeto
 ```
@@ -26,13 +29,19 @@ mcp-course-secomp/
 
 ## 🚀 Como Usar no Google Colab
 
-No notebook do Google Colab, execute em uma célula para instalar o pacote diretamente a partir do repositório no GitHub:
+### 1. Instalação do Pacote
+
+No notebook do Google Colab, instale o pacote diretamente a partir do repositório no GitHub:
 
 ```python
 !pip install git+https://github.com/Brunonaive03/mcp-course-secomp.git
 ```
 
-Em seguida, importe e execute a função `prepare_environment`:
+---
+
+### 2. Preparar Banco de Dados MongoDB
+
+Importe e execute `prepare_environment` para baixar o banco e iniciar o MongoDB com a coleção de músicas:
 
 ```python
 from mcp_utils import prepare_environment
@@ -40,7 +49,73 @@ from mcp_utils import prepare_environment
 prepare_environment()
 ```
 
-*(Opcional: você também pode passar explicitamente a URL do repositório como argumento: `prepare_environment("https://github.com/Brunonaive03/mcp-course-secomp.git")`)*
+---
+
+### 3. Configuração da Chave da API
+
+Para utilizar o modelo `gpt-oss:20b` (modelo open-weights da OpenAI):
+
+No Google Colab:
+1. Abra a barra lateral esquerda e clique no ícone de Chave/Segredos (🔑).
+2. Adicione o segredo:
+   - **Nome**: `OPENAI_API_KEY` (ou `OLLAMA_API_KEY`)
+   - **Valor**: `[Cole sua chave de API]`
+3. Habilite a opção **"Acesso ao notebook"** (Notebook access).
+
+*(Opcional) Para testar apenas o chat LLM imediatamente sem MCP:*
+```python
+from mcp_utils import launch_music_chat
+
+# Inicia o chat imediatamente conectado ao gpt-oss:20b internamente!
+launch_music_chat()
+```
+
+---
+
+### 4. Construindo o Servidor MCP na Célula
+
+Os alunos podem definir o Servidor MCP diretamente no runtime do Colab (em uma célula do notebook):
+
+```python
+import json
+from pymongo import MongoClient
+from mcp.server.mcpserver import MCPServer
+
+# 1. Definir o Servidor MCP na célula
+server = MCPServer("mcp-music-lab")
+mongo = MongoClient("mongodb://localhost:27017/")["mcp_music_lab"]
+
+@server.tool()
+def search_tracks(query: str) -> str:
+    """Busca faixas por título ou artista no banco de dados."""
+    track = mongo["tracks"].find_one({"title": {"$regex": query, "$options": "i"}})
+    if track:
+        return json.dumps(track, default=str)
+    return "Nenhuma faixa encontrada."
+
+@server.tool()
+def get_track_by_id(track_id: str) -> str:
+    """Retorna os dados completos e preview de uma faixa pelo ID (ex: 'trk_1dcdf5eadf')."""
+    track = mongo["tracks"].find_one({"_id": track_id})
+    if track:
+        return json.dumps(track, default=str)
+    return "Faixa não encontrada."
+```
+
+---
+
+### 5. Iniciar o Chat com Player Spotify e Servidor MCP
+
+Basta passar o `server` para `launch_music_chat`. A biblioteca inicializa o agente com o `gpt-oss:20b`, executa o loop de ferramentas e toca as músicas no player automaticamente:
+
+```python
+from mcp_utils import launch_music_chat
+
+# Conecta o servidor MCP ao chat com gpt-oss:20b e player Spotify
+launch_music_chat(server=server)
+```
+
+
 
 ---
 
@@ -62,4 +137,5 @@ A função detecta automaticamente a versão do Ubuntu do Colab (Noble 24.04 ou 
 * **Coleções**:
   * `albums`
   * `reviews`
-  * `tracks`
+  * `tracks` (com `title`, `artists`, `description`, `resources.thumbnail_url`, `resources.preview_url`)
+
