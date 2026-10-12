@@ -90,12 +90,15 @@ class MCPAgent:
                 init_options = lowlevel.create_initialization_options()
                 tg.start_soon(lowlevel.run, server_read, server_write, init_options)
 
-                # Conecta o cliente aos streams correspondentes
-                async with ClientSession(client_read, client_write) as session:
-                    await session.initialize()
-                    result = await callback(session)
-
-                tg.cancel_scope.cancel()
+                try:
+                    # Conecta o cliente aos streams correspondentes
+                    async with ClientSession(client_read, client_write) as session:
+                        await session.initialize()
+                        result = await callback(session)
+                finally:
+                    tg.cancel_scope.cancel()
+                    await client_write.aclose()
+                    await server_write.aclose()
             return result
 
         elif self.server_script is not None:
@@ -223,14 +226,19 @@ class MCPAgent:
 
     async def _chat_async(self, message: str, history: Optional[list] = None) -> Tuple[str, Optional[Any]]:
         """Loop de execução assíncrona do agente com tool-calling."""
+        print(f"\n" + "=" * 60, flush=True)
+        print(f"🎵 [MCP Host] Mensagem recebida: \"{message}\"", flush=True)
         detected_track = None
 
         async def _step(session: ClientSession):
             nonlocal detected_track
 
             # 1. Descoberta de Tools no Servidor MCP
+            print(f"🔍 [MCP Host] Descobrindo ferramentas no servidor MCP...", flush=True)
             tools_resp = await session.list_tools()
             openai_tools = self._convert_mcp_to_openai_tools(tools_resp.tools)
+            tool_names = [t.name for t in tools_resp.tools]
+            print(f"🛠️ [MCP Host] {len(tool_names)} ferramenta(s) registrada(s): {tool_names}", flush=True)
 
             # 2. Montar histórico de mensagens
             messages = [{"role": "system", "content": self.system_prompt}]
@@ -252,15 +260,24 @@ class MCPAgent:
                 call_kwargs["tools"] = openai_tools
                 call_kwargs["tool_choice"] = "auto"
 
-            response = self.llm_client.chat.completions.create(**call_kwargs)
+            print(f"🤖 [MCP Host] Consultando modelo '{self.model}'...", flush=True)
+            try:
+                response = self.llm_client.chat.completions.create(**call_kwargs)
+            except Exception as e:
+                print(f"❌ [MCP Host] Erro na requisição à LLM: {e}", flush=True)
+                raise e
+
             choice = response.choices[0]
             assistant_msg = choice.message
+            tool_calls = getattr(assistant_msg, "tool_calls", None)
 
             # 4. Verificar se a LLM solicitou chamada de Tool
-            if getattr(assistant_msg, "tool_calls", None):
+            if tool_calls:
+                print(f"⚡ [MCP Host] A LLM decidiu invocar {len(tool_calls)} Tool(s)!", flush=True)
+                
                 # Adiciona a intenção da LLM no histórico como dicionário estruturado e serializável
                 assistant_tool_calls = []
-                for i, tc in enumerate(assistant_msg.tool_calls):
+                for i, tc in enumerate(tool_calls):
                     call_id = getattr(tc, "id", None) or f"call_{i}"
                     assistant_tool_calls.append({
                         "id": call_id,
@@ -278,7 +295,7 @@ class MCPAgent:
                 })
 
                 last_result_text = ""
-                for i, tool_call in enumerate(assistant_msg.tool_calls):
+                for i, tool_call in enumerate(tool_calls):
                     fn_name = tool_call.function.name
                     call_id = getattr(tool_call, "id", None) or f"call_{i}"
                     try:
@@ -286,12 +303,15 @@ class MCPAgent:
                     except Exception:
                         fn_args = {}
 
+                    print(f"   ▶️ [Execução de Tool] {fn_name}({fn_args})", flush=True)
+
                     # Executa a tool no Servidor MCP
                     try:
                         tool_result = await session.call_tool(fn_name, fn_args)
                     except Exception as err:
                         tool_result = None
                         result_text = f"Erro ao executar a ferramenta {fn_name}: {err}"
+                        print(f"   ❌ [Erro na Tool] Falha ao rodar '{fn_name}': {err}", flush=True)
 
                     if tool_result:
                         # Intercepta se a tool retornou informações de música
@@ -305,10 +325,12 @@ class MCPAgent:
                             elif isinstance(track_cand, dict):
                                 track_id = track_cand.get("track_id") or track_cand.get("_id")
 
-                            # Se tiver track_id, a aplicação lê o MCP Resource: music://tracks/{track_id}
                             if track_id:
+                                print(f"   🎯 [MCP Host] ID de faixa identificado: '{track_id}'", flush=True)
+                                # A aplicação lê o MCP Resource: music://tracks/{track_id}
+                                resource_uri = f"music://tracks/{track_id}"
+                                print(f"   📖 [MCP Resource] Solicitando leitura de '{resource_uri}'...", flush=True)
                                 try:
-                                    resource_uri = f"music://tracks/{track_id}"
                                     resource_res = await session.read_resource(resource_uri)
                                     if resource_res and resource_res.contents:
                                         c = resource_res.contents[0]
@@ -316,9 +338,9 @@ class MCPAgent:
                                             res_data = json.loads(c.text)
                                             if isinstance(res_data, dict):
                                                 detected_track = res_data
-                                except Exception:
-                                    # Se o servidor não declarou o recurso ou der erro, mantém track_cand
-                                    pass
+                                                print(f"   ✅ [MCP Resource] Sucesso! Recurso resolvido via MCP.", flush=True)
+                                except Exception as r_err:
+                                    print(f"   ℹ️ [MCP Resource] Servidor não possui recurso para '{resource_uri}' ({r_err}). Usando retorno da Tool.", flush=True)
 
                         # Converte conteúdo do resultado para texto
                         result_text_parts = []
@@ -326,6 +348,7 @@ class MCPAgent:
                             if hasattr(c, "text"):
                                 result_text_parts.append(c.text)
                         result_text = "\n".join(result_text_parts) or "Sucesso."
+                        print(f"   ✅ [Retorno da Tool] ({len(result_text)} caracteres): {result_text[:120]}...", flush=True)
 
                     last_result_text = result_text
 
@@ -344,6 +367,7 @@ class MCPAgent:
                 if openai_tools:
                     final_call_kwargs["tools"] = openai_tools
 
+                print(f"🤖 [MCP Host] Enviando dados da Tool de volta para o modelo '{self.model}'...", flush=True)
                 try:
                     final_resp = self.llm_client.chat.completions.create(**final_call_kwargs)
                     final_msg = final_resp.choices[0].message
@@ -353,11 +377,14 @@ class MCPAgent:
                         or getattr(final_msg, "reasoning", None)
                         or ""
                     )
+                    print(f"📥 [MCP Host] Resposta recebida da LLM.", flush=True)
                 except Exception as e:
+                    print(f"⚠️ [MCP Host] Falha na segunda chamada da LLM: {e}. Usando sintetizador local.", flush=True)
                     final_text = ""
 
                 # Fallback amigável caso modelos de raciocínio (como gpt-oss) deixem content vazio
                 if not final_text or not final_text.strip():
+                    print(f"ℹ️ [MCP Host] LLM não gerou texto conversacional. Sintetizando resposta amigável a partir dos dados...", flush=True)
                     if detected_track and isinstance(detected_track, dict):
                         t_name = detected_track.get("title", "faixa selecionada")
                         t_artists = detected_track.get("artists") or [detected_track.get("artist", "")]
@@ -386,15 +413,20 @@ class MCPAgent:
                     else:
                         final_text = "Consulta realizada com sucesso."
 
+                print(f"💬 [MCP Host] Resposta final do assistente: \"{final_text[:100]}...\"", flush=True)
+                print("=" * 60 + "\n", flush=True)
                 return final_text
 
             else:
-                return (
+                resp_text = (
                     assistant_msg.content
                     or getattr(assistant_msg, "reasoning_content", None)
                     or getattr(assistant_msg, "reasoning", None)
                     or "Olá! Como posso ajudar você com músicas hoje?"
                 )
+                print(f"💬 [MCP Host] Resposta direta (sem ferramentas): \"{resp_text[:100]}...\"", flush=True)
+                print("=" * 60 + "\n", flush=True)
+                return resp_text
 
         reply_text = await self._run_session(_step)
         return reply_text, detected_track

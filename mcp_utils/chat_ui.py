@@ -295,6 +295,7 @@ def build_music_chat_app(
                 yield "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
                 return
 
+            print(f"\n🎧 [Chat UI] Processando mensagem do usuário: \"{user_msg}\"", flush=True)
             history = history or []
             history.append({"role": "user", "content": user_msg})
             history.append({"role": "assistant", "content": "..."})
@@ -303,6 +304,9 @@ def build_music_chat_app(
             try:
                 result = actual_chat_fn(user_msg, history[:-2])
             except Exception as e:
+                import traceback
+                print(f"❌ [Chat UI Error] Exceção ao executar o chat: {e}", flush=True)
+                traceback.print_exc()
                 history[-1]["content"] = f"⚠️ Erro ao processar mensagem com o agente: {e}"
                 yield "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
                 return
@@ -342,6 +346,12 @@ def build_music_chat_app(
                     else:
                         reply_text = "Processado com sucesso."
 
+                if new_track:
+                    track_name = new_track.get("title") if isinstance(new_track, dict) else new_track
+                    print(f"▶️ [Chat UI] Faixa sincronizada com o player: {track_name}", flush=True)
+
+                print(f"🎧 [Chat UI] Exibindo resposta no chat ({len(reply_text)} caracteres)...", flush=True)
+
                 # Efeito visual de digitação
                 import time
                 words = reply_text.split(" ")
@@ -351,6 +361,8 @@ def build_music_chat_app(
                     history[-1]["content"] = accumulated
                     yield "", history, _format_track_html(new_track), _extract_preview_url(new_track), new_track
                     time.sleep(0.015)
+
+            print(f"✅ [Chat UI] Turno finalizado com sucesso.\n", flush=True)
 
 
         # Ações de envio
