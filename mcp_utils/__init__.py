@@ -1,4 +1,4 @@
-from .env_setup import prepare_environment
+from .env_setup import prepare_environment, ensure_mongodb_running
 from .llm_setup import (
     get_openai_client,
     get_openai_api_key,
@@ -13,6 +13,7 @@ from .agent import MCPAgent
 
 __all__ = [
     "prepare_environment",
+    "ensure_mongodb_running",
     "get_openai_client",
     "get_openai_api_key",
     "OpenAIAuthError",

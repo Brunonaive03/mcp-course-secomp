@@ -83,7 +83,7 @@ from mcp.server.mcpserver import MCPServer
 
 # 1. Definir o Servidor MCP na célula e conectar ao banco local
 server = MCPServer("mcp-music-lab")
-mongo = MongoClient("mongodb://localhost:27017/")["mcp_music_lab"]
+mongo = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)["mcp_music_lab"]
 
 # 2. Tool MCP: O modelo descobre e chama para buscar faixas
 @server.tool()

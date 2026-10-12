@@ -399,6 +399,16 @@ def launch_music_chat(
     - `share=True`: Gera uma URL pública compartilhável (gradio.live).
     - `block=True`: Mantém a célula em execução enquanto o chat estiver aberto (ao interromper a célula, fecha o servidor).
     """
+    from .env_setup import ensure_mongodb_running
+    if not ensure_mongodb_running():
+        print("\n⚠️ " + "=" * 63, flush=True)
+        print("⚠️ [AVISO] MongoDB não está rodando em localhost:27017!", flush=True)
+        print("   As Tools que consultam o banco falharão com 'Connection Refused'.", flush=True)
+        print("   👉 Para iniciar e restaurar o banco, execute antes:", flush=True)
+        print("      from mcp_utils import prepare_environment", flush=True)
+        print("      prepare_environment()", flush=True)
+        print("=" * 66 + "\n", flush=True)
+
     app = build_music_chat_app(
         chat_fn=chat_fn,
         server=server,
