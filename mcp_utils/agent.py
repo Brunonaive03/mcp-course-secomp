@@ -136,6 +136,23 @@ class MCPAgent:
 
         return anyio.run(self._run_session, _list)
 
+    def read_resource(self, uri: str) -> Optional[str]:
+        """
+        Lê o conteúdo textual de um Resource MCP registrado no servidor a partir de sua URI.
+
+        Exemplo:
+            agent.read_resource("music://tracks/trk_1dcdf5eadf")
+        """
+        async def _read(session: ClientSession):
+            res = await session.read_resource(uri)
+            if res.contents:
+                c = res.contents[0]
+                if hasattr(c, "text"):
+                    return c.text
+            return None
+
+        return anyio.run(self._run_session, _read)
+
     def get_available_prompts(self) -> List[Dict[str, Any]]:
         """Descobre e lista todos os prompts registrados no servidor MCP."""
         async def _list(session: ClientSession):
@@ -258,6 +275,27 @@ class MCPAgent:
                     track_cand = self._extract_track_from_tool_result(tool_result)
                     if track_cand:
                         detected_track = track_cand
+                        # Identifica o track_id
+                        track_id = None
+                        if isinstance(track_cand, str) and track_cand.startswith("trk_"):
+                            track_id = track_cand
+                        elif isinstance(track_cand, dict):
+                            track_id = track_cand.get("track_id") or track_cand.get("_id")
+
+                        # Se tiver track_id, a aplicação lê o MCP Resource: music://tracks/{track_id}
+                        if track_id:
+                            try:
+                                resource_uri = f"music://tracks/{track_id}"
+                                resource_res = await session.read_resource(resource_uri)
+                                if resource_res and resource_res.contents:
+                                    c = resource_res.contents[0]
+                                    if hasattr(c, "text") and c.text:
+                                        res_data = json.loads(c.text)
+                                        if isinstance(res_data, dict):
+                                            detected_track = res_data
+                            except Exception:
+                                # Se o servidor não declarou o recurso ou der erro, mantém track_cand
+                                pass
 
                     # Converte conteúdo do resultado para texto
                     result_text_parts = []

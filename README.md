@@ -74,39 +74,54 @@ launch_music_chat()
 
 ### 4. Construindo o Servidor MCP na Célula
 
-Os alunos podem definir o Servidor MCP diretamente no runtime do Colab (em uma célula do notebook):
+Os alunos definem o Servidor MCP com **Tools** e **Resources** diretamente no runtime do Colab:
 
 ```python
 import json
 from pymongo import MongoClient
 from mcp.server.mcpserver import MCPServer
 
-# 1. Definir o Servidor MCP na célula
+# 1. Definir o Servidor MCP na célula e conectar ao banco local
 server = MCPServer("mcp-music-lab")
 mongo = MongoClient("mongodb://localhost:27017/")["mcp_music_lab"]
 
+# 2. Tool MCP: O modelo descobre e chama para buscar faixas
 @server.tool()
-def search_tracks(query: str) -> str:
-    """Busca faixas por título ou artista no banco de dados."""
-    track = mongo["tracks"].find_one({"title": {"$regex": query, "$options": "i"}})
-    if track:
-        return json.dumps(track, default=str)
-    return "Nenhuma faixa encontrada."
+def search_tracks_by_artist(artist: str) -> str:
+    """Busca até 3 faixas de um determinado artista no catálogo.
+    
+    Args:
+        artist: Nome do artista ou banda (ex: 'Queen', 'Oasis').
+    """
+    cursor = mongo["tracks"].find(
+        {"artists": {"$regex": artist, "$options": "i"}},
+        {"_id": 1, "title": 1, "artists": 1}
+    ).limit(3)
+    results = [
+        {"track_id": str(t["_id"]), "title": t["title"], "artists": t.get("artists", [])}
+        for t in cursor
+    ]
+    return json.dumps(results, ensure_ascii=False) if results else "Nenhuma faixa encontrada."
 
-@server.tool()
-def get_track_by_id(track_id: str) -> str:
-    """Retorna os dados completos e preview de uma faixa pelo ID (ex: 'trk_1dcdf5eadf')."""
+# 3. Resource MCP: A aplicação lê via URI para carregar mídia e áudio no Player
+@server.resource("music://tracks/{track_id}")
+def get_track_resource(track_id: str) -> str:
+    """Recurso consumido pela aplicação (Host) para obter áudio e capa da faixa."""
     track = mongo["tracks"].find_one({"_id": track_id})
     if track:
         return json.dumps(track, default=str)
-    return "Faixa não encontrada."
+    return "{}"
 ```
+
+> **💡 Diferença Fundamental no MCP:**
+> - **Tool (`search_tracks_by_artist`)**: Operação solicitada pelo **LLM**. O modelo decide quando chamar e recebe dados compactos no contexto para formular sua resposta ao usuário.
+> - **Resource (`music://tracks/{track_id}`)**: Conteúdo lido pela **aplicação/Host** (`resources/read`). Quando o assistente identifica uma música, a aplicação resolve o recurso via protocolo MCP para obter a URL de streaming e a imagem da capa, alimentando o Player estilo Spotify.
 
 ---
 
 ### 5. Iniciar o Chat com Player Spotify e Servidor MCP
 
-Basta passar o `server` para `launch_music_chat`. A biblioteca inicializa o agente com o `gpt-oss:20b`, executa o loop de ferramentas e toca as músicas no player automaticamente:
+Basta passar o `server` para `launch_music_chat`. A biblioteca inicializa o agente com o `gpt-oss:20b`, executa o loop de ferramentas, resolve os recursos e toca as músicas no player automaticamente:
 
 ```python
 from mcp_utils import launch_music_chat

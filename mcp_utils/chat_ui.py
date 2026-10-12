@@ -111,40 +111,21 @@ body, .gradio-container {
 
 
 def _normalize_track(track_data: Any) -> Optional[Dict[str, Any]]:
-    """Normaliza os dados da faixa recebidos do agente ou da consulta MCP."""
+    """Normaliza os dados da faixa recebidos do agente ou do recurso MCP."""
     if not track_data:
         return None
 
     # Se for uma string representando um ID de faixa (ex: 'trk_1dcdf5eadf')
     if isinstance(track_data, str) and track_data.strip().startswith("trk_"):
         track_id = track_data.strip()
-        try:
-            from pymongo import MongoClient
-            client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=800)
-            db = client["mcp_music_lab"]
-            doc = db["tracks"].find_one({"_id": track_id})
-            if doc:
-                return doc
-        except Exception:
-            pass
-        return {"title": track_id, "artists": ["MCP Track"], "resources": {}}
+        return {"title": track_id, "artists": ["Faixa MCP"], "resources": {}}
 
-    # Se for um dicionário
+    # Se for um dicionário de metadados
     if isinstance(track_data, dict):
-        # Se contiver 'track_id' mas não tiver 'resources', tenta buscar no MongoDB local
-        if "track_id" in track_data and not (track_data.get("resources") or {}).get("preview_url"):
-            try:
-                from pymongo import MongoClient
-                client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=800)
-                db = client["mcp_music_lab"]
-                doc = db["tracks"].find_one({"_id": track_data["track_id"]})
-                if doc:
-                    return doc
-            except Exception:
-                pass
         return track_data
 
     return None
+
 
 
 def _format_track_html(track: Optional[Dict[str, Any]]) -> str:
