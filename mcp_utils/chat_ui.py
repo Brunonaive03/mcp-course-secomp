@@ -233,7 +233,8 @@ def build_music_chat_app(
 
             def internal_llm_chat(user_msg: str, history: list):
                 if client is None:
-                    return f"⚠️ Chave de API não configurada ({client_err}). Configure OPENAI_API_KEY ou OLLAMA_API_KEY nos Secrets do Colab."
+                    yield f"⚠️ Chave de API não configurada ({client_err}). Configure OPENAI_API_KEY ou OLLAMA_API_KEY nos Secrets do Colab."
+                    return
 
                 messages = [{"role": "system", "content": "Você é um assistente de música amigável."}]
                 for turn in (history or []):
@@ -241,13 +242,18 @@ def build_music_chat_app(
                 messages.append({"role": "user", "content": user_msg})
 
                 try:
-                    resp = client.chat.completions.create(
+                    response_stream = client.chat.completions.create(
                         model=getattr(client, "default_model", model),
-                        messages=messages
+                        messages=messages,
+                        stream=True
                     )
-                    return resp.choices[0].message.content or ""
+                    accumulated = ""
+                    for chunk in response_stream:
+                        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                            accumulated += chunk.choices[0].delta.content
+                            yield accumulated
                 except Exception as err:
-                    return f"⚠️ Erro ao consultar modelo {model}: {err}"
+                    yield f"⚠️ Erro ao consultar modelo {model}: {err}"
 
             actual_chat_fn = internal_llm_chat
     else:
@@ -305,38 +311,61 @@ def build_music_chat_app(
 
         def process_turn(user_msg: str, history: list, current_track: Any):
             if not user_msg or not user_msg.strip():
-                return "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
+                yield "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
+                return
 
             history = history or []
             history.append({"role": "user", "content": user_msg})
+            history.append({"role": "assistant", "content": "..."})
+            yield "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
 
             try:
-                result = actual_chat_fn(user_msg, history[:-1])
+                result = actual_chat_fn(user_msg, history[:-2])
             except Exception as e:
-                error_msg = f"⚠️ Erro ao processar mensagem com o agente: {e}"
-                history.append({"role": "assistant", "content": error_msg})
-                return "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
+                history[-1]["content"] = f"⚠️ Erro ao processar mensagem com o agente: {e}"
+                yield "", history, _format_track_html(current_track), _extract_preview_url(current_track), current_track
+                return
 
-            # Tratar retornos: (texto, track) ou apenas texto
             new_track = current_track
-            if isinstance(result, (tuple, list)) and len(result) >= 2:
-                reply_text = str(result[0])
-                candidate_track = _normalize_track(result[1])
-                if candidate_track:
-                    new_track = candidate_track
-            elif isinstance(result, dict) and "reply" in result:
-                reply_text = str(result.get("reply", ""))
-                candidate_track = _normalize_track(result.get("track"))
-                if candidate_track:
-                    new_track = candidate_track
+
+            # Se for um generator/iterator (streaming token a token)
+            if inspect.isgenerator(result) or inspect.isgeneratorfunction(actual_chat_fn):
+                for chunk in result:
+                    if isinstance(chunk, (tuple, list)) and len(chunk) >= 2:
+                        reply_part = str(chunk[0])
+                        candidate_track = _normalize_track(chunk[1])
+                        if candidate_track:
+                            new_track = candidate_track
+                    else:
+                        reply_part = str(chunk)
+
+                    history[-1]["content"] = reply_part
+                    yield "", history, _format_track_html(new_track), _extract_preview_url(new_track), new_track
             else:
-                reply_text = str(result)
+                # Se for retorno estático (string ou tupla), aplica digitação suave
+                if isinstance(result, (tuple, list)) and len(result) >= 2:
+                    reply_text = str(result[0])
+                    candidate_track = _normalize_track(result[1])
+                    if candidate_track:
+                        new_track = candidate_track
+                elif isinstance(result, dict) and "reply" in result:
+                    reply_text = str(result.get("reply", ""))
+                    candidate_track = _normalize_track(result.get("track"))
+                    if candidate_track:
+                        new_track = candidate_track
+                else:
+                    reply_text = str(result)
 
-            history.append({"role": "assistant", "content": reply_text})
-            new_html = _format_track_html(new_track)
-            new_audio = _extract_preview_url(new_track)
+                # Efeito visual de digitação
+                import time
+                words = reply_text.split(" ")
+                accumulated = ""
+                for i, word in enumerate(words):
+                    accumulated += (word if i == 0 else " " + word)
+                    history[-1]["content"] = accumulated
+                    yield "", history, _format_track_html(new_track), _extract_preview_url(new_track), new_track
+                    time.sleep(0.015)
 
-            return "", history, new_html, new_audio, new_track
 
         # Ações de envio
         msg_input.submit(
@@ -360,16 +389,17 @@ def launch_music_chat(
     title: str = "🎵 MCP Music Assistant",
     subtitle: str = "Mini-curso MCP - SECOMP UFPE",
     share: bool = True,
+    inline: bool = False,
+    block: bool = True,
     server_port: int = 7860,
     **launch_kwargs
 ) -> Any:
     """
     Inicia o servidor Gradio com a interface de chat e player de música estilo Spotify.
 
-    Uso simples:
-    - `launch_music_chat()`: conecta diretamente ao modelo interno gpt-oss:20b para testar o chat.
-    - `launch_music_chat(server=server)`: conecta o servidor MCP in-memory com tool-calling.
-    - `launch_music_chat(chat_fn=meu_agente)`: conecta uma função de agente personalizada.
+    - `inline=False`: Desativa o iframe na saída da célula do Colab, forçando a abertura via link externo.
+    - `share=True`: Gera uma URL pública compartilhável (gradio.live).
+    - `block=True`: Mantém a célula em execução enquanto o chat estiver aberto (ao interromper a célula, fecha o servidor).
     """
     app = build_music_chat_app(
         chat_fn=chat_fn,
@@ -385,5 +415,30 @@ def launch_music_chat(
     if "theme" in launch_params and "theme" not in launch_kwargs:
         launch_kwargs["theme"] = gr.themes.Base()
 
-    return app.launch(share=share, server_port=server_port, **launch_kwargs)
+    # Inicia com inline desativado para abrir em nova aba
+    launch_result = app.launch(
+        share=share,
+        inline=inline,
+        server_port=server_port,
+        prevent_thread_lock=not block,
+        **launch_kwargs
+    )
+
+    target_url = getattr(app, "share_url", None) or getattr(app, "local_url", None) or f"http://localhost:{server_port}"
+
+    print("\n" + "=" * 65)
+    print("🎵 MCP Music Chat iniciado com sucesso!")
+    print(f"👉 Abra o chat no seu navegador: {target_url}")
+    print("⏹️ Para encerrar o chat, clique no botão Interromper (Stop ⏹️) da célula.")
+    print("=" * 65 + "\n")
+
+    if block:
+        try:
+            app.block_thread()
+        except (KeyboardInterrupt, Exception):
+            print("\n⏹️ Chat encerrado com sucesso.")
+            app.close()
+
+    return launch_result
+
 
