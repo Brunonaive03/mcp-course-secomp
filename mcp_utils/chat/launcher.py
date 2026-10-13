@@ -54,6 +54,9 @@ def launch_music_chat(
     print("\n" + "=" * 65)
     print("🎵 MCP Music Chat iniciado com sucesso!")
     print(f"👉 Abra o chat no seu navegador: {target_url}")
+    if share:
+        print("⚠️ [Segurança] share=True gera um link público no gradio.live.")
+        print("   Qualquer pessoa com esse link poderá enviar mensagens consumindo a cota da sua chave de API.")
     print("⏹️ Para encerrar o chat, clique no botão Interromper (Stop ⏹️) da célula.")
     print("=" * 65 + "\n")
 

@@ -143,8 +143,8 @@ def build_music_chat_app(
                         scale=5,
                     )
                     prompt_arg_input = gr.Textbox(
-                        label="Parâmetro do Prompt (opcional):",
-                        placeholder="Ex: Queen, Oasis, Rock...",
+                        label="Parâmetro(s) do Prompt (separe por vírgula se houver mais de um):",
+                        placeholder="Ex: The Beatles, Oasis, Radiohead...",
                         scale=3,
                     )
                     load_prompt_btn = gr.Button("Carregar na Mensagem 📋", variant="secondary", scale=2)
@@ -156,18 +156,26 @@ def build_music_chat_app(
                     if not p:
                         return ""
                     args = {}
-                    for a in (p.arguments or []):
-                        val = p_arg.strip() if p_arg and p_arg.strip() else f"[{a.name}]"
-                        args[a.name] = val
+                    p_args = p.arguments or []
+                    user_parts = [part.strip() for part in p_arg.split(",") if part.strip()] if p_arg else []
+
+                    for idx, a in enumerate(p_args):
+                        if idx < len(user_parts):
+                            args[a.name] = user_parts[idx]
+                        elif p_arg and p_arg.strip() and len(p_args) == 1:
+                            args[a.name] = p_arg.strip()
+                        else:
+                            args[a.name] = f"[{a.name}]"
+
                     try:
-                        import anyio
+                        from ..agent.core import _run_sync
                         async def _render():
                             res = await server.get_prompt(p_name, arguments=args)
                             if res and res.messages:
                                 m = res.messages[0]
                                 return m.content.text if hasattr(m.content, "text") else str(m.content)
                             return ""
-                        return anyio.run(_render)
+                        return _run_sync(_render)
                     except Exception as err:
                         return f"Erro ao renderizar prompt '{p_name}': {err}"
 
@@ -388,6 +396,15 @@ def build_music_chat_app(
             fn=on_track_select,
             inputs=[track_dropdown, playlist_state],
             outputs=[track_display, audio_player, current_index_state]
+        )
+
+        def on_clear():
+            return "", [], format_track_html(None), None, [], 0, gr.update(choices=[], value=None)
+
+        clear_btn.click(
+            fn=on_clear,
+            inputs=[],
+            outputs=[msg_input, chatbot, track_display, audio_player, playlist_state, current_index_state, track_dropdown]
         )
 
     return demo
