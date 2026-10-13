@@ -116,7 +116,7 @@ def prepare_environment(repo_url: str = "https://github.com/Brunonaive03/mcp-cou
     if os.path.exists(temp_clone_dir):
         shutil.rmtree(temp_clone_dir, ignore_errors=True)
 
-    git_clone_cmd = f"GIT_TERMINAL_PROMPT=0 git clone {repo_url} {temp_clone_dir}"
+    git_clone_cmd = f"GIT_TERMINAL_PROMPT=0 git clone --depth 1 {repo_url} {temp_clone_dir}"
     _run_cmd(
         git_clone_cmd,
         f"[5/6] Baixando dados do repositório ({repo_url})...",
