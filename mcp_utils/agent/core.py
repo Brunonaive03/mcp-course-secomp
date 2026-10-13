@@ -1,13 +1,14 @@
 import anyio
-import inspect
 import json
-import re
-import sys
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from mcp.types import TextContent
+from mcp import ClientSession
+
+from .transport import get_lowlevel_server, run_mcp_session
+from .schema import convert_mcp_to_openai_tools
+from .parser import extract_tracks_from_tool_result, extract_track_from_tool_result
+from ..llm.setup import get_openai_client, get_ollama_client
 
 
 DEFAULT_SYSTEM_PROMPT = """Você é um assistente especializado em música para o curso de MCP (Model Context Protocol).
@@ -38,7 +39,7 @@ class MCPAgent:
         - `server`: Instância do servidor MCP definida em memória (MCPServer ou Server).
         - `server_script`: Caminho opcional para script Python caso queira usar stdio clássico via arquivo.
         - `llm_client`: Cliente OpenAI-compatible (ex: retornado por `get_ollama_client()`).
-        - `model`: Nome do modelo (padrão: client.default_model ou 'llama3.2').
+        - `model`: Nome do modelo (padrão: client.default_model ou 'gpt-oss:20b').
         - `system_prompt`: Prompt de sistema para instruir o comportamento do assistente.
         """
         if server is None and server_script is None:
@@ -53,8 +54,6 @@ class MCPAgent:
 
         # Configurar cliente LLM
         if llm_client is None:
-            import os
-            from .llm_setup import get_openai_client, get_ollama_client
             if os.environ.get("OLLAMA_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
                 self.llm_client = get_ollama_client()
             else:
@@ -65,48 +64,17 @@ class MCPAgent:
         # Modelo
         self.model = model or getattr(self.llm_client, "default_model", "gpt-oss:20b")
 
-
     def _get_lowlevel_server(self) -> Any:
         """Extrai a instância de servidor baixo-nível para conexão via streams de memória."""
-        if hasattr(self.server, "_lowlevel_server"):
-            return self.server._lowlevel_server
-        return self.server
+        return get_lowlevel_server(self.server)
 
     async def _run_session(self, callback: Callable[[ClientSession], Any]) -> Any:
-        """
-        Executa uma sessão com o servidor MCP:
-        - Se `server` for passado: conecta via memory streams (o transporte mais seguro no Colab).
-        - Se `server_script` for passado: conecta via stdio_client (subprocesso).
-        """
-        if self.server is not None:
-            lowlevel = self._get_lowlevel_server()
-            # Criar par de canais de streaming de memória
-            client_write, server_read = anyio.create_memory_object_stream(20)
-            server_write, client_read = anyio.create_memory_object_stream(20)
-
-            result = None
-            async with anyio.create_task_group() as tg:
-                # Inicia o servidor conectado aos streams
-                init_options = lowlevel.create_initialization_options()
-                tg.start_soon(lowlevel.run, server_read, server_write, init_options)
-
-                try:
-                    # Conecta o cliente aos streams correspondentes
-                    async with ClientSession(client_read, client_write) as session:
-                        await session.initialize()
-                        result = await callback(session)
-                finally:
-                    tg.cancel_scope.cancel()
-                    await client_write.aclose()
-                    await server_write.aclose()
-            return result
-
-        elif self.server_script is not None:
-            params = StdioServerParameters(command=sys.executable, args=[self.server_script])
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    return await callback(session)
+        """Executa uma sessão com o servidor MCP."""
+        return await run_mcp_session(
+            server=self.server,
+            server_script=self.server_script,
+            callback=callback,
+        )
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """Descobre e lista todas as tools registradas no servidor MCP."""
@@ -208,59 +176,15 @@ class MCPAgent:
 
     def _convert_mcp_to_openai_tools(self, mcp_tools: list) -> list:
         """Converte as ferramentas MCP para o formato de function calling da OpenAI/Ollama."""
-        openai_tools = []
-        for t in mcp_tools:
-            params = getattr(t, "input_schema", getattr(t, "inputSchema", {})) or {"type": "object", "properties": {}}
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description or "",
-                    "parameters": params,
-                }
-            })
-        return openai_tools
-
+        return convert_mcp_to_openai_tools(mcp_tools)
 
     def _extract_tracks_from_tool_result(self, raw_result: Any) -> List[Any]:
         """Tenta extrair metadados ou IDs de todas as faixas a partir do retorno da tool do MCP."""
-        if not raw_result or not hasattr(raw_result, "content"):
-            return []
-
-        tracks: List[Any] = []
-        for item in raw_result.content:
-            if isinstance(item, TextContent) and item.text:
-                text = item.text.strip()
-                # 1. Tentar parsear JSON
-                try:
-                    data = json.loads(text)
-                    if isinstance(data, list):
-                        for el in data:
-                            if isinstance(el, dict):
-                                tracks.append(el)
-                            elif isinstance(el, str) and el.startswith("trk_"):
-                                tracks.append(el)
-                    elif isinstance(data, dict):
-                        tracks.append(data)
-                except Exception:
-                    pass
-
-                # 2. Se não encontrou no JSON, busca por IDs no formato trk_...
-                if not tracks:
-                    matches = re.findall(r"trk_[a-zA-Z0-9]+", text)
-                    if matches:
-                        seen = set()
-                        for m in matches:
-                            if m not in seen:
-                                seen.add(m)
-                                tracks.append(m)
-
-        return tracks
+        return extract_tracks_from_tool_result(raw_result)
 
     def _extract_track_from_tool_result(self, raw_result: Any) -> Optional[Any]:
         """Tenta extrair metadados ou ID de faixa (primeiro item) a partir do retorno da tool."""
-        tracks = self._extract_tracks_from_tool_result(raw_result)
-        return tracks[0] if tracks else None
+        return extract_track_from_tool_result(raw_result)
 
     async def _chat_async(self, message: str, history: Optional[list] = None) -> Tuple[str, List[Any]]:
         """Loop de execução assíncrona do agente com tool-calling."""

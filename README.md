@@ -16,11 +16,24 @@ mcp-course-secomp/
 │   ├── tracks.bson
 │   └── tracks.metadata.json
 ├── mcp_utils/                 # Pacote Python com utilitários
-│   ├── __init__.py
-│   ├── env_setup.py           # Automação do ambiente MongoDB no Colab
-│   ├── llm_setup.py           # Conexão e autenticação com Ollama Cloud
-│   ├── chat_ui.py             # Chat Gradio com player de música estilo Spotify
-│   └── agent.py               # Agente MCP (conecta servidor ao Ollama e ao Chat)
+│   ├── env/
+│   │   ├── __init__.py
+│   │   └── setup.py           # Automação do ambiente MongoDB no Colab
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   └── setup.py           # Conexão e autenticação com Ollama Cloud
+│   ├── agent/
+│   │   ├── __init__.py
+│   │   ├── core.py            # Orquestrador MCPAgent e loop assíncrono de tool calling
+│   │   ├── transport.py       # Conexão MCP (memória / stdio)
+│   │   ├── schema.py          # Conversão de esquemas de tools para OpenAI
+│   │   └── parser.py          # Extração e normalização de faixas musicais
+│   └── chat/
+│       ├── __init__.py
+│       ├── launcher.py        # Inicialização do servidor Gradio (launch_music_chat)
+│       ├── builder.py         # Montagem do layout Gradio e eventos do chat
+│       ├── player.py          # Lógica do player Spotify, faixas e HTML
+│       └── styles.py          # Estilos visuais CSS (Spotify Dark Theme)
 ├── setup.py                   # Configuração de empacotamento Python
 └── README.md                  # Documentação do projeto
 ```
