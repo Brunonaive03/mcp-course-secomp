@@ -111,10 +111,15 @@ mongo = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
 # 2. Tool MCP: Busca faixas no catálogo (leitura compacta)
 @server.tool()
 def search_tracks_by_artist(
-    artist: str = Field(..., description="Nome do artista ou banda (ex: 'The Beatles', 'Oasis')"),
-    limit: int = Field(5, ge=1, le=20, description="Quantidade máxima de faixas a retornar")
+    artist: str = Field(..., description="Nome do artista ou banda musical a pesquisar no catálogo (ex: 'The Beatles', 'Oasis')"),
+    limit: int = Field(5, ge=1, le=20, description="Quantidade máxima de faixas a retornar do catálogo (entre 1 e 20)")
 ) -> str:
-    """Busca faixas musicais reais de um artista específico no catálogo do banco de dados."""
+    """Busca faixas musicais de um artista específico no catálogo do banco de dados (FERRAMENTA DE LEITURA).
+
+    Use esta ferramenta para verificar se um artista ou suas músicas realmente existem no catálogo,
+    obter seus identificadores (track_id) e dados reais antes de citá-los ao usuário.
+    Retorna uma lista JSON compacta com track_id, title e artists.
+    """
     cursor = mongo["tracks"].find(
         {"artists": {"$regex": re.escape(artist), "$options": "i"}},
         {"_id": 1, "title": 1, "artists": 1}
@@ -128,15 +133,16 @@ def search_tracks_by_artist(
 # 3. Tool MCP: Adiciona resenha de álbum (escrita no banco)
 @server.tool()
 def add_album_review(
-    album_title: str = Field(..., description="Título do álbum avaliado (ex: 'Abbey Road', 'Definitely Maybe')"),
-    reviewer: str = Field(..., description="Nome do autor da resenha"),
-    score: float = Field(..., ge=1, le=5, description="Nota de 1 a 5 (ex: 4, 4.5, 5)"),
-    comment: str = Field(..., description="Comentário crítico sobre o álbum")
+    album_title: str = Field(..., description="Título exato do álbum a ser avaliado (ex: 'Abbey Road', 'Definitely Maybe')"),
+    reviewer: str = Field(..., description="Nome do autor da resenha ou identificação do crítico musical"),
+    score: float = Field(..., ge=1, le=5, description="Nota numérica atribuída ao álbum, de 1 a 5 (permite valores decimais como 4.5)"),
+    comment: str = Field(..., description="Texto detalhado da análise crítica, impressões e justificativa da nota")
 ) -> str:
-    """Salva e registra uma nova resenha no catálogo.
-    
-    Use esta ferramenta APENAS quando o usuário solicitar explicitamente para salvar
-    ou registrar uma resenha no banco. NÃO use se o usuário pedir apenas uma opinião no chat.
+    """Salva e registra permanentemente uma nova resenha crítica de álbum no banco de dados (FERRAMENTA DE ESCRITA/PERSISTÊNCIA).
+
+    DIRETRIZES DE USO:
+    - Invoque esta ferramenta ESTRITAMENTE quando o usuário pedir explicitamente para salvar, registrar, gravar ou adicionar uma resenha no banco/catálogo.
+    - NÃO invoque esta ferramenta se o usuário estiver apenas pedindo sua opinião, análise crítica ou resenha no chat. Nessas situações, responda diretamente em texto.
     """
     doc = {
         "album_title": album_title.strip(),
@@ -151,9 +157,14 @@ def add_album_review(
 # 4. Tool MCP: Consulta resenhas de álbuns
 @server.tool()
 def get_album_reviews(
-    album_title: str = Field(..., description="Título aproximado do álbum")
+    album_title: str = Field(..., description="Título exato ou aproximado do álbum para buscar resenhas já cadastradas (ex: 'Abbey Road', 'Definitely Maybe')")
 ) -> str:
-    """Consulta resenhas e avaliações que já foram salvas anteriormente no banco de dados."""
+    """Consulta resenhas e avaliações críticas que já foram salvas anteriormente no banco de dados para um determinado álbum (FERRAMENTA DE LEITURA).
+
+    Use esta ferramenta quando o usuário perguntar o que outros ouvintes ou críticos acharam de um álbum,
+    ou para verificar se já existem notas e comentários cadastrados no catálogo para a obra.
+    Retorna a lista de resenhas existentes (autor, nota e comentário) ou mensagem informando que nenhuma resenha foi encontrada.
+    """
     cursor = mongo["reviews"].find(
         {"album_title": {"$regex": re.escape(album_title), "$options": "i"}},
         {"_id": 0, "album_title": 1, "reviewer": 1, "score": 1, "comment": 1}
