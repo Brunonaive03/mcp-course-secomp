@@ -75,6 +75,30 @@ body, .gradio-container {
     display: inline-block;
 }
 
+.spotify-badge-no-audio {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    display: inline-block;
+}
+
+.spotify-badge-meta-only {
+    background: rgba(114, 114, 114, 0.15);
+    color: #9e9e9e;
+    border: 1px solid rgba(114, 114, 114, 0.4);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    display: inline-block;
+}
+
 .spotify-track-title {
     color: #FFFFFF;
     font-size: 15px;
@@ -180,13 +204,16 @@ def _normalize_tracks(candidate: Any) -> List[Dict[str, Any]]:
 
 
 def _build_dropdown_choices(playlist: List[Dict[str, Any]]) -> List[str]:
-    """Gera lista de rótulos formatados para o dropdown da playlist."""
+    """Gera lista de rótulos formatados para o dropdown da playlist, indicando se possui áudio."""
     choices = []
     for i, t in enumerate(playlist):
         title = t.get("title", f"Faixa {i+1}")
         artists = t.get("artists") or [t.get("artist", "")]
         art_str = f" - {', '.join(str(a) for a in artists if a)}" if artists else ""
-        choices.append(f"{i+1}. {title}{art_str}")
+        res = t.get("resources") or {}
+        has_audio = bool(res.get("preview_url") or t.get("preview_url"))
+        audio_tag = "" if has_audio else " (sem áudio)"
+        choices.append(f"{i+1}. {title}{art_str}{audio_tag}")
     return choices
 
 
@@ -204,7 +231,7 @@ def _get_index_from_selection(selection: Optional[str], choices: List[str]) -> i
 
 
 def _format_track_html(track: Optional[Dict[str, Any]], current_idx: int = 0, total_tracks: int = 0) -> str:
-    """Gera o HTML do card de faixa do player estilo Spotify com indicação explícita de prévia."""
+    """Gera o HTML do card de faixa do player com feedback dinâmico sobre recursos disponíveis (áudio e capa)."""
     if not track:
         return """
         <div class="spotify-track-container">
@@ -227,6 +254,7 @@ def _format_track_html(track: Optional[Dict[str, Any]], current_idx: int = 0, to
 
     resources = track.get("resources") or {}
     thumb_url = resources.get("thumbnail_url") or track.get("thumbnail_url") or ""
+    preview_url = resources.get("preview_url") or track.get("preview_url") or ""
 
     if thumb_url:
         cover_html = f'<img src="{html.escape(thumb_url)}" class="spotify-cover-art" alt="Capa">'
@@ -237,17 +265,28 @@ def _format_track_html(track: Optional[Dict[str, Any]], current_idx: int = 0, to
     if total_tracks > 1:
         counter_badge = f'<span style="background: #282828; color: #1DB954; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">Faixa {current_idx + 1} de {total_tracks}</span>'
 
+    # Feedback dinâmico de acordo com os recursos disponíveis
+    if preview_url:
+        badge_html = '<span class="spotify-badge-preview">▶️ PRÉVIA DA MÚSICA (30s)</span>'
+        note_html = '<p class="spotify-preview-note">⏱️ Amostra de áudio de 30s resolvida via MCP Resource</p>'
+    elif thumb_url:
+        badge_html = '<span class="spotify-badge-no-audio">🖼️ SEM PRÉVIA DE ÁUDIO</span>'
+        note_html = '<p class="spotify-preview-note" style="color: #f59e0b;">ℹ️ Capa disponível, mas a faixa não possui amostra de áudio</p>'
+    else:
+        badge_html = '<span class="spotify-badge-meta-only">📄 APENAS METADADOS</span>'
+        note_html = '<p class="spotify-preview-note" style="color: #727272;">⚠️ Faixa sem mídia registrada no catálogo</p>'
+
     return f"""
     <div class="spotify-track-container">
         {cover_html}
         <div class="spotify-track-meta">
             <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="spotify-badge-preview">▶️ PRÉVIA DA MÚSICA (30s)</span>
+                {badge_html}
                 {counter_badge}
             </div>
             <p class="spotify-track-title" title="{title}">{title}</p>
             <p class="spotify-track-artist" title="{artist_str}">{artist_str}</p>
-            <p class="spotify-preview-note">⏱️ Amostra de áudio de 30s resolvida via MCP Resource</p>
+            {note_html}
         </div>
     </div>
     """
