@@ -25,19 +25,42 @@ def _run_sync(async_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     Executa uma função assíncrona com anyio de forma segura tanto em scripts normais
     quanto dentro de ambientes com event loop já em execução (ex: Jupyter Notebook, Google Colab).
     """
+    is_async_running = False
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+        import sniffio
+        if sniffio.current_async_library():
+            is_async_running = True
+    except Exception:
+        pass
 
-    if loop and loop.is_running():
-        # Quando já estamos dentro de um loop de eventos (Jupyter/Colab), delegamos
-        # para uma thread dedicada para evitar "RuntimeError: Already running asyncio in this thread"
+    if not is_async_running:
+        try:
+            loop = asyncio.get_running_loop()
+            if loop and loop.is_running():
+                is_async_running = True
+        except RuntimeError:
+            pass
+
+    if not is_async_running:
+        try:
+            if asyncio.current_task() is not None:
+                is_async_running = True
+        except Exception:
+            pass
+
+    if is_async_running:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(anyio.run, async_fn, *args, **kwargs)
             return future.result()
-    else:
+
+    try:
         return anyio.run(async_fn, *args, **kwargs)
+    except RuntimeError as err:
+        if "Already running" in str(err):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(anyio.run, async_fn, *args, **kwargs)
+                return future.result()
+        raise
 
 
 class MCPAgent:
