@@ -1,4 +1,3 @@
-import html
 import inspect
 from typing import Any, Callable, Dict, List, Optional
 
@@ -91,36 +90,6 @@ def build_music_chat_app(
         with gr.Row():
             with gr.Column():
                 gr.Markdown(f"# {title}\n### {subtitle}")
-
-        # Banner de Ferramentas, Recursos e Prompts MCP conectados (se server foi passado)
-        tools_list = []
-        resources_list = []
-        prompts_list = []
-        if server is not None:
-            if hasattr(server, "_tool_manager") and hasattr(server._tool_manager, "_tools"):
-                for name, t in server._tool_manager._tools.items():
-                    desc = getattr(t, "description", "") or ""
-                    desc_str = f" ({desc.strip()})" if desc else ""
-                    tools_list.append(f"<code>{html.escape(name)}</code>{html.escape(desc_str)}")
-            if hasattr(server, "_resource_manager") and hasattr(server._resource_manager, "_templates"):
-                for uri_tpl in server._resource_manager._templates.keys():
-                    resources_list.append(f"<code>{html.escape(uri_tpl)}</code>")
-            if hasattr(server, "_prompt_manager") and hasattr(server._prompt_manager, "_prompts"):
-                for name, p in server._prompt_manager._prompts.items():
-                    desc = getattr(p, "description", "") or ""
-                    desc_str = f" ({desc.strip()})" if desc else ""
-                    prompts_list.append(f"<code>{html.escape(name)}</code>{html.escape(desc_str)}")
-
-        if tools_list or resources_list or prompts_list:
-            banner_html = "<div style='background: #181818; border: 1px solid #282828; border-radius: 10px; padding: 12px 18px; margin-bottom: 12px; font-size: 13px;'>"
-            if tools_list:
-                banner_html += f"<div style='margin-bottom: 4px;'><strong style='color: #1DB954;'>🛠️ Ferramentas MCP Ativas ({len(tools_list)}):</strong> " + " • ".join(tools_list) + "</div>"
-            if resources_list:
-                banner_html += f"<div style='margin-bottom: 4px;'><strong style='color: #3b82f6;'>📖 Recursos MCP:</strong> " + " • ".join(resources_list) + "</div>"
-            if prompts_list:
-                banner_html += f"<div><strong style='color: #f59e0b;'>💡 Prompts MCP ({len(prompts_list)}):</strong> " + " • ".join(prompts_list) + "</div>"
-            banner_html += "</div>"
-            gr.HTML(banner_html)
 
         # Janela do Chat
         chatbot = gr.Chatbot(
