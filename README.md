@@ -130,14 +130,14 @@ def search_tracks_by_artist(
 def add_album_review(
     album_title: str = Field(..., description="Título do álbum avaliado (ex: 'Abbey Road', 'Definitely Maybe')"),
     reviewer: str = Field(..., description="Nome do autor da resenha"),
-    score: int = Field(..., ge=1, le=5, description="Nota de 1 a 5"),
+    score: float = Field(..., ge=1, le=5, description="Nota de 1 a 5 (ex: 4, 4.5, 5)"),
     comment: str = Field(..., description="Comentário crítico sobre o álbum")
 ) -> str:
     """Registra uma nova resenha e avaliação crítica de álbum no banco de dados."""
     doc = {
         "album_title": album_title.strip(),
         "reviewer": reviewer.strip(),
-        "score": int(score),
+        "score": float(score),
         "comment": comment.strip(),
         "created_at": datetime.now(timezone.utc)
     }

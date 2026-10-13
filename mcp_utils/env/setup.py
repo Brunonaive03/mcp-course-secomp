@@ -140,6 +140,31 @@ def prepare_environment(repo_url: str = "https://github.com/Brunonaive03/mcp-cou
         "Falha ao executar mongorestore.",
     )
 
+    if restore_success:
+        try:
+            from pymongo import MongoClient
+            client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
+            client["mcp_music_lab"].command({
+                "collMod": "reviews",
+                "validator": {
+                    "$jsonSchema": {
+                        "bsonType": "object",
+                        "required": ["album_title", "reviewer", "score", "comment", "created_at"],
+                        "properties": {
+                            "_id": {},
+                            "album_title": {"bsonType": "string", "minLength": 1, "maxLength": 200},
+                            "reviewer": {"bsonType": "string", "minLength": 1, "maxLength": 100},
+                            "score": {"bsonType": ["int", "long", "double"], "minimum": 1, "maximum": 5},
+                            "comment": {"bsonType": "string", "minLength": 1, "maxLength": 2000},
+                            "created_at": {"bsonType": "date"},
+                        },
+                        "additionalProperties": False,
+                    }
+                }
+            })
+        except Exception:
+            pass
+
     print("=" * 60)
     if restore_success:
         print("Ambiente configurado com sucesso! O MongoDB está pronto para uso.")
