@@ -1,6 +1,8 @@
 # MCP Course - Infraestrutura e Dados para Google Colab
 
-Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** na SECOMP UFPE. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Brunonaive03/mcp-course-secomp/blob/main/minicurso_mcp.ipynb)
+
+Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** na SECOMP UFPE. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp`), o notebook prático interativo (`minicurso_mcp.ipynb`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
 
 ---
 
@@ -8,6 +10,7 @@ Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** 
 
 ```text
 mcp-course-secomp/
+├── minicurso_mcp.ipynb        # Notebook prático interativo para o Google Colab
 ├── data/                      # Dump do MongoDB (.bson e .metadata.json)
 │   ├── albums.bson
 │   ├── albums.metadata.json
