@@ -179,6 +179,33 @@ class MCPAgent:
 
         return anyio.run(self._run_session, _list)
 
+    def get_prompt(self, name: str, arguments: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+        """
+        Recupera as mensagens renderizadas de um Prompt registrado no servidor MCP.
+
+        Retorna lista de dicionários com 'role' e 'content'.
+        Exemplo:
+            messages = agent.get_prompt("discover_artist", {"artist": "Oasis"})
+        """
+        async def _get(session: ClientSession):
+            res = await session.get_prompt(name, arguments=arguments)
+            rendered_messages = []
+            for m in res.messages:
+                text = ""
+                if hasattr(m.content, "text"):
+                    text = m.content.text
+                elif isinstance(m.content, str):
+                    text = m.content
+                else:
+                    text = str(m.content)
+                rendered_messages.append({
+                    "role": m.role,
+                    "content": text
+                })
+            return rendered_messages
+
+        return anyio.run(self._run_session, _get)
+
     def _convert_mcp_to_openai_tools(self, mcp_tools: list) -> list:
         """Converte as ferramentas MCP para o formato de function calling da OpenAI/Ollama."""
         openai_tools = []

@@ -339,9 +339,10 @@ def build_music_chat_app(
             with gr.Column():
                 gr.Markdown(f"# {title}\n### {subtitle}")
 
-        # Banner de Ferramentas e Recursos MCP conectados (se server foi passado)
+        # Banner de Ferramentas, Recursos e Prompts MCP conectados (se server foi passado)
         tools_list = []
         resources_list = []
+        prompts_list = []
         if server is not None:
             if hasattr(server, "_tool_manager") and hasattr(server._tool_manager, "_tools"):
                 for name, t in server._tool_manager._tools.items():
@@ -351,13 +352,20 @@ def build_music_chat_app(
             if hasattr(server, "_resource_manager") and hasattr(server._resource_manager, "_templates"):
                 for uri_tpl in server._resource_manager._templates.keys():
                     resources_list.append(f"<code>{html.escape(uri_tpl)}</code>")
+            if hasattr(server, "_prompt_manager") and hasattr(server._prompt_manager, "_prompts"):
+                for name, p in server._prompt_manager._prompts.items():
+                    desc = getattr(p, "description", "") or ""
+                    desc_str = f" ({desc.strip()})" if desc else ""
+                    prompts_list.append(f"<code>{html.escape(name)}</code>{html.escape(desc_str)}")
 
-        if tools_list or resources_list:
+        if tools_list or resources_list or prompts_list:
             banner_html = "<div style='background: #181818; border: 1px solid #282828; border-radius: 10px; padding: 12px 18px; margin-bottom: 12px; font-size: 13px;'>"
             if tools_list:
                 banner_html += f"<div style='margin-bottom: 4px;'><strong style='color: #1DB954;'>🛠️ Ferramentas MCP Ativas ({len(tools_list)}):</strong> " + " • ".join(tools_list) + "</div>"
             if resources_list:
-                banner_html += f"<div><strong style='color: #3b82f6;'>📖 Recursos MCP:</strong> " + " • ".join(resources_list) + "</div>"
+                banner_html += f"<div style='margin-bottom: 4px;'><strong style='color: #3b82f6;'>📖 Recursos MCP:</strong> " + " • ".join(resources_list) + "</div>"
+            if prompts_list:
+                banner_html += f"<div><strong style='color: #f59e0b;'>💡 Prompts MCP ({len(prompts_list)}):</strong> " + " • ".join(prompts_list) + "</div>"
             banner_html += "</div>"
             gr.HTML(banner_html)
 
@@ -366,6 +374,49 @@ def build_music_chat_app(
             elem_id="music-chatbot",
             height=460,
         )
+
+        # Seção de Prompts MCP interativos (se o servidor possuir prompts registrados)
+        prompt_items = []
+        if server is not None and hasattr(server, "_prompt_manager") and hasattr(server._prompt_manager, "_prompts"):
+            prompt_items = list(server._prompt_manager._prompts.items())
+
+        if prompt_items:
+            with gr.Accordion("💡 Prompts MCP (Modelos de Mensagens Reutilizáveis)", open=False):
+                with gr.Row():
+                    prompt_dropdown = gr.Dropdown(
+                        label="Selecionar Prompt MCP:",
+                        choices=[(f"{name} — {getattr(p, 'description', '')}", name) for name, p in prompt_items],
+                        value=prompt_items[0][0] if prompt_items else None,
+                        scale=5,
+                    )
+                    prompt_arg_input = gr.Textbox(
+                        label="Parâmetro do Prompt (opcional):",
+                        placeholder="Ex: Queen, Oasis, Rock...",
+                        scale=3,
+                    )
+                    load_prompt_btn = gr.Button("Carregar na Mensagem 📋", variant="secondary", scale=2)
+
+                def load_selected_prompt(p_name: str, p_arg: str):
+                    if not p_name or not server or not hasattr(server, "_prompt_manager"):
+                        return ""
+                    p = server._prompt_manager._prompts.get(p_name)
+                    if not p:
+                        return ""
+                    args = {}
+                    for a in (p.arguments or []):
+                        val = p_arg.strip() if p_arg and p_arg.strip() else f"[{a.name}]"
+                        args[a.name] = val
+                    try:
+                        import anyio
+                        async def _render():
+                            res = await server.get_prompt(p_name, arguments=args)
+                            if res and res.messages:
+                                m = res.messages[0]
+                                return m.content.text if hasattr(m.content, "text") else str(m.content)
+                            return ""
+                        return anyio.run(_render)
+                    except Exception as err:
+                        return f"Erro ao renderizar prompt '{p_name}': {err}"
 
         # Entrada de Texto
         with gr.Row():
@@ -377,6 +428,14 @@ def build_music_chat_app(
             )
             send_btn = gr.Button("Enviar", variant="primary", scale=1, elem_classes=["spotify-send-btn"])
             clear_btn = gr.ClearButton(components=[msg_input, chatbot], value="Limpar", scale=1)
+
+        # Conectar ação do botão de Prompt (se existir)
+        if prompt_items:
+            load_prompt_btn.click(
+                fn=load_selected_prompt,
+                inputs=[prompt_dropdown, prompt_arg_input],
+                outputs=[msg_input]
+            )
 
         # Barra do Player Spotify (Dock Inferior com Playlist de Prévias)
         with gr.Group(elem_id="spotify-player-bar"):

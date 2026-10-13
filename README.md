@@ -87,16 +87,17 @@ mongo = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
 
 # 2. Tool MCP: O modelo descobre e chama para buscar faixas
 @server.tool()
-def search_tracks_by_artist(artist: str) -> str:
-    """Busca todas as faixas de um determinado artista no catálogo.
+def search_tracks_by_artist(artist: str, limit: int = 10) -> str:
+    """Busca faixas de um determinado artista no catálogo.
     
     Args:
         artist: Nome do artista ou banda (ex: 'Queen', 'Oasis').
+        limit: Quantidade máxima de faixas a retornar (padrão 10).
     """
     cursor = mongo["tracks"].find(
         {"artists": {"$regex": artist, "$options": "i"}},
         {"_id": 1, "title": 1, "artists": 1}
-    )
+    ).limit(limit)
     results = [
         {"track_id": str(t["_id"]), "title": t["title"], "artists": t.get("artists", [])}
         for t in cursor
@@ -111,11 +112,18 @@ def get_track_resource(track_id: str) -> str:
     if track:
         return json.dumps(track, default=str)
     return "{}"
+
+# 4. Prompt MCP: Modelo de mensagem acionado pelo usuário
+@server.prompt()
+def discover_artist(artist: str) -> str:
+    """Roteiro de descoberta musical guiado para explorar um artista."""
+    return f"Faça uma análise musical do artista '{artist}'. Apresente sua história brevemente, liste os sucessos presentes no catálogo e recomende uma faixa para começar a ouvir."
 ```
 
-> **💡 Diferença Fundamental no MCP:**
-> - **Tool (`search_tracks_by_artist`)**: Operação solicitada pelo **LLM**. O modelo decide quando chamar e recebe dados compactos no contexto (IDs, títulos e artistas de todas as faixas encontradas) para formular sua resposta ao usuário.
-> - **Resource (`music://tracks/{track_id}`)**: Conteúdo lido pela **aplicação/Host** (`resources/read`). Quando o assistente identifica as músicas retornadas pela Tool, a aplicação resolve os recursos de cada faixa via protocolo MCP para obter as URLs das **prévias de áudio (30s)** e imagens de capa, montando uma **playlist completa com alternância de faixas** diretamente no Player estilo Spotify.
+> **💡 A Trinca de Primitivas do MCP:**
+> - **Tool (`search_tracks_by_artist`)**: Operação solicitada pelo **LLM**. O modelo decide autonomamente quando chamar e recebe dados compactos no contexto para formular sua resposta ao usuário.
+> - **Resource (`music://tracks/{track_id}`)**: Conteúdo lido pela **aplicação/Host** (`resources/read`). Quando o assistente identifica as músicas, a aplicação resolve os recursos via protocolo MCP para obter as URLs das **prévias de áudio (30s)** e imagens de capa, alimentando a playlist do Player.
+> - **Prompt (`discover_artist`)**: Modelo de instrução acionado pelo **Usuário** (`prompts/get`). O usuário escolhe na interface um modelo de mensagem pré-configurado e preenche os parâmetros (ex: artista) para iniciar uma conversa estruturada.
 
 ---
 
