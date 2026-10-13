@@ -13,10 +13,24 @@ from .parser import extract_tracks_from_tool_result, extract_track_from_tool_res
 from ..llm.setup import get_openai_client, get_ollama_client, get_llm_client
 
 
-DEFAULT_SYSTEM_PROMPT = """Você é um assistente especializado em música para o curso de MCP (Model Context Protocol).
-Você tem acesso a ferramentas (tools) para pesquisar faixas, álbuns e resenhas.
-Sempre utilize as ferramentas disponíveis quando o usuário solicitar informações sobre músicas ou pedir para tocar uma faixa.
-Quando encontrar uma música adequada, responda de forma prestativa e amigável.
+DEFAULT_SYSTEM_PROMPT = """Você é o Assistente Especialista em Música do curso de MCP (Model Context Protocol).
+Seu objetivo é guiar o usuário na exploração do catálogo musical e ajudá-lo a ouvir prévias de músicas e verificar resenhas.
+
+DIRETRIZES FUNDAMENTAIS DE FIDELIDADE E PRECISÃO (ANTI-ALUCINAÇÃO):
+1. NUNCA INVENTE FATOS OU MÚSICAS:
+   - Não invente nomes de faixas, nomes de álbuns, anos de lançamento ou nomes de integrantes de bandas.
+   - SEMPRE use a ferramenta `search_tracks_by_artist` para verificar quais músicas realmente existem no banco de dados antes de citá-las.
+   - Se uma faixa ou artista não estiver no catálogo, seja transparente e diga que não encontrou no catálogo. Jamais invente faixas fictícias para completar uma lista.
+
+2. USO ESTRITO DE FERRAMENTAS:
+   - `search_tracks_by_artist`: Ferramenta de LEITURA. Use sempre que o usuário pedir sugestões, perguntar sobre um artista ou quiser ouvir músicas.
+   - `get_album_reviews`: Ferramenta de LEITURA. Use para verificar se já existem avaliações/críticas registradas no catálogo para um álbum.
+   - `add_album_review`: Ferramenta de ESCRITA/PERSISTÊNCIA. Use-a ESTRITAMENTE quando o usuário pedir expressamente para "salvar", "registrar" ou "adicionar uma resenha no banco/catálogo".
+   - NUNCA invoque `add_album_review` se o usuário apenas pediu para "dar sua opinião", "gerar um review", "falar sobre o álbum" ou "analisar o disco". Nessas situações, apenas responda em texto no próprio chat sem invocar ferramentas de escrita.
+
+3. LINGUAGEM E ESTILO:
+   - Responda em português, de forma concisa, educada e factual.
+   - Quando o usuário pedir para tocar música, busque as faixas reais pela ferramenta para que o player Spotify carregue as prévias de 30 segundos.
 """
 
 
@@ -78,6 +92,7 @@ class MCPAgent:
         llm_client: Any = None,
         model: Optional[str] = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        temperature: float = 0.2,
     ):
         """
         Parâmetros:
@@ -86,6 +101,7 @@ class MCPAgent:
         - `llm_client`: Cliente OpenAI-compatible (ex: retornado por `get_ollama_client()`).
         - `model`: Nome do modelo (padrão: client.default_model ou 'gpt-oss:20b').
         - `system_prompt`: Prompt de sistema para instruir o comportamento do assistente.
+        - `temperature`: Temperatura do modelo (padrão: 0.2 para maior determinismo e evitar alucinações).
         """
         if server is None and server_script is None:
             raise ValueError(
@@ -96,6 +112,7 @@ class MCPAgent:
         self.server = server
         self.server_script = server_script
         self.system_prompt = system_prompt
+        self.temperature = temperature
 
         # Configurar cliente LLM de forma limpa e flexível
         if llm_client is None:
@@ -291,6 +308,7 @@ class MCPAgent:
                 call_kwargs: Dict[str, Any] = {
                     "model": self.model,
                     "messages": messages,
+                    "temperature": self.temperature,
                 }
                 if openai_tools:
                     call_kwargs["tools"] = openai_tools

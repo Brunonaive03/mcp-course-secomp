@@ -114,7 +114,7 @@ def search_tracks_by_artist(
     artist: str = Field(..., description="Nome do artista ou banda (ex: 'The Beatles', 'Oasis')"),
     limit: int = Field(5, ge=1, le=20, description="Quantidade máxima de faixas a retornar")
 ) -> str:
-    """Busca faixas de um determinado artista no catálogo."""
+    """Busca faixas musicais reais de um artista específico no catálogo do banco de dados."""
     cursor = mongo["tracks"].find(
         {"artists": {"$regex": re.escape(artist), "$options": "i"}},
         {"_id": 1, "title": 1, "artists": 1}
@@ -133,7 +133,11 @@ def add_album_review(
     score: float = Field(..., ge=1, le=5, description="Nota de 1 a 5 (ex: 4, 4.5, 5)"),
     comment: str = Field(..., description="Comentário crítico sobre o álbum")
 ) -> str:
-    """Registra uma nova resenha e avaliação crítica de álbum no banco de dados."""
+    """Salva e registra uma nova resenha no catálogo.
+    
+    Use esta ferramenta APENAS quando o usuário solicitar explicitamente para salvar
+    ou registrar uma resenha no banco. NÃO use se o usuário pedir apenas uma opinião no chat.
+    """
     doc = {
         "album_title": album_title.strip(),
         "reviewer": reviewer.strip(),
@@ -149,7 +153,7 @@ def add_album_review(
 def get_album_reviews(
     album_title: str = Field(..., description="Título aproximado do álbum")
 ) -> str:
-    """Consulta avaliações e resenhas registradas sobre um álbum."""
+    """Consulta resenhas e avaliações que já foram salvas anteriormente no banco de dados."""
     cursor = mongo["reviews"].find(
         {"album_title": {"$regex": re.escape(album_title), "$options": "i"}},
         {"_id": 0, "album_title": 1, "reviewer": 1, "score": 1, "comment": 1}
