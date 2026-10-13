@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name='mcp_course_secomp',
     version='0.3.0',
-    packages=find_packages(),
+    packages=find_packages(exclude=['notebooks*', 'data*']),
     install_requires=[
         'pymongo>=4.8.0,<5.0.0',
         'gradio>=4.0.0,<7.0.0',

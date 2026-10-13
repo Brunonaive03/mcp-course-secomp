@@ -1,8 +1,8 @@
 # MCP Course - Infraestrutura e Dados para Google Colab
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Brunonaive03/mcp-course-secomp/blob/main/minicurso_mcp.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Brunonaive03/mcp-course-secomp/blob/main/notebooks/minicurso_mcp.ipynb)
 
-Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** na SECOMP UFPE. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp`), o notebook prático interativo (`minicurso_mcp.ipynb`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
+Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** na SECOMP UFPE. Este repositório fornece o pacote Python utilitário (`mcp_course_secomp` / `mcp_utils`), os materiais didáticos na pasta `notebooks/` (com o notebook prático interativo `minicurso_mcp.ipynb` e os slides da apresentação `Introdução a MCP e LLMs.pdf`) e o dump de dados do MongoDB (`data/`) para que os alunos possam configurar e executar a infraestrutura de banco de dados diretamente no **Google Colab** de forma simples e automatizada.
 
 ---
 
@@ -10,7 +10,9 @@ Repositório unificado para o mini-curso sobre **Model Context Protocol (MCP)** 
 
 ```text
 mcp-course-secomp/
-├── minicurso_mcp.ipynb        # Notebook prático interativo para o Google Colab
+├── notebooks/                 # Materiais didáticos (notebook prático e apresentação em PDF)
+│   ├── minicurso_mcp.ipynb    # Notebook interativo para o Google Colab
+│   └── Introdução a MCP e LLMs.pdf # Apresentação de slides do minicurso
 ├── data/                      # Dump do MongoDB (.bson e .metadata.json)
 │   ├── albums.bson
 │   ├── albums.metadata.json
@@ -18,7 +20,7 @@ mcp-course-secomp/
 │   ├── reviews.metadata.json
 │   ├── tracks.bson
 │   └── tracks.metadata.json
-├── mcp_utils/                 # Pacote Python com utilitários
+├── mcp_utils/                 # Pacote Python com utilitários (instalado via pip)
 │   ├── env/
 │   │   ├── __init__.py
 │   │   └── setup.py           # Automação do ambiente MongoDB no Colab
@@ -37,7 +39,9 @@ mcp-course-secomp/
 │       ├── builder.py         # Montagem do layout Gradio e eventos do chat
 │       ├── player.py          # Lógica do player Spotify, faixas e HTML
 │       └── styles.py          # Estilos visuais CSS (Spotify Dark Theme)
+├── MANIFEST.in                # Configuração para isolar notebooks/ e data/ do pacote pip
 ├── setup.py                   # Configuração de empacotamento Python
+├── test_preview.py            # Script auxiliar para teste local da interface Gradio
 └── README.md                  # Documentação do projeto
 ```
 
