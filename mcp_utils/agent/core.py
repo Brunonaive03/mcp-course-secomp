@@ -9,7 +9,12 @@ from mcp import ClientSession
 
 from .transport import get_lowlevel_server, run_mcp_session
 from .schema import convert_mcp_to_openai_tools
-from .parser import extract_tracks_from_tool_result, extract_track_from_tool_result
+from .parser import (
+    extract_tracks_from_tool_result,
+    extract_track_from_tool_result,
+    extract_track_id,
+    is_valid_track_dict,
+)
 from ..llm.setup import get_openai_client, get_ollama_client, get_llm_client
 
 
@@ -375,12 +380,7 @@ class MCPAgent:
                         if tracks_cand:
                             print(f"   🎵 [MCP Host] {len(tracks_cand)} faixa(s) detectada(s) no retorno da Tool.", flush=True)
                             for cand in tracks_cand:
-                                track_id = None
-                                if isinstance(cand, str) and cand.startswith("trk_"):
-                                    track_id = cand
-                                elif isinstance(cand, dict):
-                                    track_id = cand.get("track_id") or cand.get("_id")
-
+                                track_id = extract_track_id(cand)
                                 resolved_track = cand
                                 if track_id:
                                     print(f"   🎯 [MCP Host] ID identificado: '{track_id}'. Resolvendo via MCP Resource...", flush=True)
@@ -391,9 +391,11 @@ class MCPAgent:
                                             c = resource_res.contents[0]
                                             if hasattr(c, "text") and c.text:
                                                 res_data = json.loads(c.text)
-                                                if isinstance(res_data, dict):
+                                                if isinstance(res_data, dict) and is_valid_track_dict(res_data):
                                                     resolved_track = res_data
                                                     print(f"   ✅ [MCP Resource] Recurso '{resource_uri}' resolvido via MCP.", flush=True)
+                                                else:
+                                                    print(f"   ℹ️ [MCP Resource] Recurso '{resource_uri}' não continha metadados válidos. Mantendo dados da Tool.", flush=True)
                                     except Exception as r_err:
                                         print(f"   ℹ️ [MCP Resource] Aviso ao ler '{resource_uri}': {r_err}. Mantendo dados da Tool.", flush=True)
 
@@ -402,7 +404,7 @@ class MCPAgent:
                             seen_ids = set()
                             unique_tracks = []
                             for t in detected_tracks:
-                                tid = (t.get("track_id") or t.get("_id") or t.get("title")) if isinstance(t, dict) else str(t)
+                                tid = extract_track_id(t) or (t.get("title") if isinstance(t, dict) else str(t))
                                 if tid not in seen_ids:
                                     seen_ids.add(tid)
                                     unique_tracks.append(t)
@@ -455,6 +457,8 @@ class MCPAgent:
                         parsed = json.loads(last_result_text)
                         if isinstance(parsed, dict) and "message" in parsed:
                             final_text = parsed["message"]
+                        elif isinstance(parsed, dict) and "error" in parsed:
+                            final_text = f"Aviso do sistema: {parsed['error']}"
                         elif isinstance(parsed, list) and len(parsed) > 0:
                             if "reviewer" in parsed[0]:
                                 rev_items = [f"- **{r.get('reviewer', 'Anônimo')}** (Nota {r.get('score', '-')}/5): \"{r.get('comment', '')}\"" for r in parsed]
